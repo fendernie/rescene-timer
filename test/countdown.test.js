@@ -41,3 +41,11 @@ test("signalPhase reports msLeft to target (not eff)", () => {
   const t = 100000;
   assert.equal(signalPhase(t - 800, t, 0).msLeft, 800);
 });
+
+test("signalPhase: exact bucket boundaries", () => {
+  const t = 100000;
+  assert.equal(signalPhase(t - 3000, t, 0).phase, "idle");  // 3000ms left -> not yet tick3
+  assert.equal(signalPhase(t - 2000, t, 0).phase, "tick3"); // 2000ms left -> tick3 bucket
+  assert.equal(signalPhase(t - 1000, t, 0).phase, "tick2"); // 1000ms left -> tick2 bucket
+  assert.equal(signalPhase(t, t, 0).phase, "go");           // 0ms left -> go
+});

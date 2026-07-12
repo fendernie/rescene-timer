@@ -29,3 +29,8 @@ test("load tolerates corrupt json -> defaults", () => {
   store.setItem("rescene-timer", "{not json");
   assert.deepEqual(load(store), DEFAULTS);
 });
+
+test("save swallows storage errors (private mode)", () => {
+  const throwing = { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); } };
+  assert.doesNotThrow(() => save(throwing, DEFAULTS));
+});

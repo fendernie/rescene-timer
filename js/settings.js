@@ -21,5 +21,9 @@ export function load(storage) {
 }
 
 export function save(storage, settings) {
-  storage.setItem(KEY, JSON.stringify(settings));
+  try {
+    storage.setItem(KEY, JSON.stringify(settings));
+  } catch {
+    // 저장 실패(예: 사파리 프라이빗 모드)해도 앱 동작에는 지장 없음
+  }
 }
