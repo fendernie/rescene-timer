@@ -80,7 +80,21 @@ function registerHit() {
   const sign = err > 0 ? "늦음" : err < 0 ? "빠름" : "정확";
   el.textContent = `${err >= 0 ? "+" : ""}${Math.round(err)} ms (${sign})`;
   el.className = "hit " + (Math.abs(err) <= 30 ? "good" : err > 0 ? "late" : "early");
+  if (S.mode === "practice") {
+    S.errors.push(Math.round(err));
+    if (S.errors.length > 200) S.errors = S.errors.slice(-200);
+    save(window.localStorage, S);
+    renderStats();
+  }
   return err; // Task 8에서 연습 기록에 사용
+}
+
+function renderStats() {
+  const s = stats(S.errors);
+  if (!s.n) { $("stats").textContent = "연습 기록 없음"; return; }
+  const bars = s.recent.map((e) => `${e >= 0 ? "+" : ""}${Math.round(e)}`).join("  ");
+  $("stats").textContent =
+    `시도 ${s.n}회 | 평균 ${s.mean.toFixed(0)}ms | 편차 ±${s.stdev.toFixed(0)}ms | 최고 ${s.best}ms\n최근: ${bars}`;
 }
 
 // ---- 이벤트 ----
@@ -94,9 +108,17 @@ document.querySelector(".stage").addEventListener("pointerdown", registerHit);
 $("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; save(window.localStorage, S); });
 $("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });
 $("sound").addEventListener("change", (e) => { S.soundOn = e.target.checked; save(window.localStorage, S); });
+function applyMode() {
+  const practice = S.mode === "practice";
+  $("start-practice").hidden = !practice;
+  renderStats();
+}
+$("mode").addEventListener("change", (e) => { S.mode = e.target.value; save(window.localStorage, S); applyMode(); });
+$("start-practice").addEventListener("click", () => { pickTarget(); });
 
 // ---- 시작 ----
 pickTarget();
 doSync();
+applyMode();
 requestAnimationFrame(loop);
 setInterval(doSync, 5 * 60 * 1000); // 5분마다 재동기화
