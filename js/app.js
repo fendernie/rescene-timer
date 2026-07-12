@@ -31,6 +31,7 @@ async function fetchSample() {
   const text = await res.text();
   const m = text.match(/ts=([0-9.]+)/);
   const serverMs = m ? Math.round(parseFloat(m[1]) * 1000) : Date.parse(res.headers.get("date"));
+  if (!Number.isFinite(serverMs)) throw new Error("bad time sample");
   return { serverMs, sentAt, recvAt };
 }
 async function doSync() {
