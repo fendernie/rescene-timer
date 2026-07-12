@@ -23,3 +23,21 @@ export function computeOffset(samples) {
 export function nowWith(offsetMs, clock = Date.now) {
   return clock() + offsetMs;
 }
+
+export async function syncOnce(fetchFn) {
+  const { serverMs, sentAt, recvAt } = await fetchFn();
+  return { t0: sentAt, t1: recvAt, serverMs };
+}
+
+export async function syncOffset(fetchFn, rounds = 5) {
+  const samples = [];
+  for (let i = 0; i < rounds; i += 1) {
+    try {
+      samples.push(await syncOnce(fetchFn));
+    } catch {
+      // 개별 실패는 무시하고 다음 라운드 시도
+    }
+  }
+  if (!samples.length) return { offsetMs: 0, rttMs: Infinity, ok: false };
+  return { ...computeOffset(samples), ok: true };
+}

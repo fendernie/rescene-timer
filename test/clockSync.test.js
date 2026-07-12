@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rttOf, bestSample, offsetFromSample, computeOffset, nowWith } from "../js/clockSync.js";
+import { rttOf, bestSample, offsetFromSample, computeOffset, nowWith, syncOnce, syncOffset } from "../js/clockSync.js";
 
 test("rttOf = t1 - t0", () => {
   assert.equal(rttOf({ t0: 1000, t1: 1120, serverMs: 1050 }), 120);
@@ -34,4 +34,29 @@ test("computeOffset on empty -> zero offset, infinite rtt", () => {
 
 test("nowWith adds offset to injected clock", () => {
   assert.equal(nowWith(25, () => 1000), 1025);
+});
+
+test("syncOnce packs fetch result into a sample", async () => {
+  const fake = async () => ({ serverMs: 5050, sentAt: 5000, recvAt: 5100 });
+  const s = await syncOnce(fake);
+  assert.deepEqual(s, { t0: 5000, t1: 5100, serverMs: 5050 });
+});
+
+test("syncOffset aggregates rounds and marks ok", async () => {
+  let n = 0;
+  const fake = async () => {
+    n += 1;
+    // rtt shrinks each round; best is last (rtt 40, mid 20, server 30 -> +10)
+    return { serverMs: 30, sentAt: 0, recvAt: n === 3 ? 40 : 200 };
+  };
+  const r = await syncOffset(fake, 3);
+  assert.equal(r.ok, true);
+  assert.equal(r.offsetMs, 10);
+  assert.equal(r.rttMs, 40);
+});
+
+test("syncOffset returns ok:false when every round throws", async () => {
+  const fail = async () => { throw new Error("blocked"); };
+  const r = await syncOffset(fail, 3);
+  assert.deepEqual(r, { offsetMs: 0, rttMs: Infinity, ok: false });
 });
