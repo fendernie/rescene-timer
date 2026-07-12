@@ -60,3 +60,13 @@ test("syncOffset returns ok:false when every round throws", async () => {
   const r = await syncOffset(fail, 3);
   assert.deepEqual(r, { offsetMs: 0, rttMs: Infinity, ok: false });
 });
+
+import { estimateOneWay } from "../js/clockSync.js";
+
+test("estimateOneWay: null on empty samples", () => {
+  assert.equal(estimateOneWay([]), null);
+});
+
+test("estimateOneWay: half of minimum rtt, rounded", () => {
+  assert.equal(estimateOneWay([120, 95, 210]), 48);
+});

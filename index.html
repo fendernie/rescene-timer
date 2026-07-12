@@ -13,6 +13,8 @@
     <p id="sync-status" class="muted">시계 동기화 중…</p>
     <div id="clock" class="clock">--:--:--.---</div>
 
+    <button id="hit-btn" class="hit-btn" type="button">🎯 지금! (스페이스바와 동일)</button>
+
     <div class="stage">
       <div id="count" class="count">–</div>
       <div id="gauge" class="gauge"><div class="gauge-fill"></div></div>
@@ -35,6 +37,8 @@
         </select>
       </label>
       <button id="start-practice" type="button" hidden>연습 시작 / 다음 라운드</button>
+      <button id="measure-net" type="button">네트워크 지연 측정 (리센느 서버)</button>
+      <p id="net-result" class="muted"></p>
     </section>
 
     <pre id="stats" class="stats"></pre>

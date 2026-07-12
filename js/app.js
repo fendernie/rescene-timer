@@ -1,6 +1,6 @@
-import { nowWith, syncOffset } from "./clockSync.js";
+import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
 import { nextMinuteBoundary, msUntil, signalPhase } from "./countdown.js";
-import { hitError, stats } from "./hitMeter.js";
+import { hitError, stats, recommendLead } from "./hitMeter.js";
 import { load, save } from "./settings.js";
 import { enableAudio, beep } from "./beeper.js";
 
@@ -93,8 +93,33 @@ function renderStats() {
   const s = stats(S.errors);
   if (!s.n) { $("stats").textContent = "연습 기록 없음"; return; }
   const bars = s.recent.map((e) => `${e >= 0 ? "+" : ""}${Math.round(e)}`).join("  ");
-  $("stats").textContent =
+  let text =
     `시도 ${s.n}회 | 평균 ${s.mean.toFixed(0)}ms | 편차 ±${s.stdev.toFixed(0)}ms | 최고 ${s.best}ms\n최근: ${bars}`;
+  const rec = recommendLead(S.leadMs, s.mean, s.n);
+  if (rec !== null && rec !== S.leadMs) text += `\n추천 리드타임: ${rec}ms (현재 ${S.leadMs}ms)`;
+  $("stats").textContent = text;
+}
+
+// ---- 네트워크 지연 측정 (리센느 서버) ----
+const RESCENE_URL = "https://artist.mnetplus.world/main/stg/rescene-official";
+async function measureNet() {
+  const el = $("net-result");
+  el.textContent = "측정 중…";
+  const rtts = [];
+  for (let i = 0; i < 5; i += 1) {
+    const t0 = performance.now();
+    try {
+      // no-cors: 응답 내용은 못 읽어도 도착 시점은 잴 수 있다
+      await fetch(RESCENE_URL, { mode: "no-cors", cache: "no-store" });
+      rtts.push(performance.now() - t0);
+    } catch {
+      // 실패한 회차는 건너뜀
+    }
+  }
+  const oneWay = estimateOneWay(rtts);
+  el.textContent = oneWay === null
+    ? "측정 실패 — 인터넷 연결을 확인하세요"
+    : `리센느 서버까지 추정 지연 약 ${oneWay}ms → 연습 목표: 약 -${oneWay}ms (빠름)`;
 }
 
 // ---- 이벤트 ----
@@ -104,6 +129,10 @@ window.addEventListener("keydown", firstInteract, { once: true });
 
 window.addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); registerHit(); } });
 document.querySelector(".stage").addEventListener("pointerdown", registerHit);
+// 버튼은 click(눌렀다 뗌)이 아니라 pointerdown(누르는 순간)에 기록 — 타이밍 오차 최소화.
+// preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
+$("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); registerHit(); });
+$("measure-net").addEventListener("click", measureNet);
 
 $("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; save(window.localStorage, S); });
 $("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });

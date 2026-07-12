@@ -8,6 +8,12 @@ body {
 .wrap { max-width: 520px; margin: 0 auto; padding: 16px; }
 .muted { color: #888; font-size: 14px; margin: 8px 0; }
 .clock { font-variant-numeric: tabular-nums; font-size: 34px; letter-spacing: 1px; }
+.hit-btn {
+  width: 100%; margin-top: 14px; padding: 16px; font-size: 20px; font-weight: 700;
+  background: #2563eb; color: #fff; border: 0; border-radius: 12px; cursor: pointer;
+  touch-action: manipulation; /* 모바일 탭 지연 제거 — 타이밍 버튼에 중요 */
+}
+.hit-btn:active { background: #1d4ed8; }
 .stage { margin: 24px 0; }
 .count { font-size: 120px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .gauge { height: 14px; background: #333; border-radius: 8px; overflow: hidden; margin-top: 16px; }

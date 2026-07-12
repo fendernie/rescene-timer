@@ -41,3 +41,9 @@ export async function syncOffset(fetchFn, rounds = 5) {
   if (!samples.length) return { offsetMs: 0, rttMs: Infinity, ok: false };
   return { ...computeOffset(samples), ok: true };
 }
+
+// 왕복시간 샘플들로 편도 지연을 추정한다(최소 RTT의 절반). 샘플 없으면 null.
+export function estimateOneWay(rttsMs) {
+  if (!rttsMs.length) return null;
+  return Math.round(Math.min(...rttsMs) / 2);
+}

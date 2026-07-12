@@ -27,3 +27,24 @@ test("stats.recent keeps last 10 in order", () => {
   const r = stats(arr);
   assert.deepEqual(r.recent, [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 });
+
+import { recommendLead } from "../js/hitMeter.js";
+
+test("recommendLead: null when fewer than 5 tries", () => {
+  assert.equal(recommendLead(200, -25, 4), null);
+});
+
+test("recommendLead: null when mean within ±10ms (already good)", () => {
+  assert.equal(recommendLead(200, -8, 10), null);
+});
+
+test("recommendLead: shifts lead by mean error", () => {
+  assert.equal(recommendLead(200, -25, 10), 175);
+  assert.equal(recommendLead(200, 20, 10), 220);
+});
+
+test("recommendLead: rounds to 5 and clamps to [0,600]", () => {
+  assert.equal(recommendLead(200, -23, 10), 175);
+  assert.equal(recommendLead(30, -100, 10), 0);
+  assert.equal(recommendLead(580, 40, 10), 600);
+});
