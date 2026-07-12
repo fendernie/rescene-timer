@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>리센느 00초 가이드</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="go-flash" aria-hidden="true"></div>
+
+  <main class="wrap">
+    <p id="sync-status" class="muted">시계 동기화 중…</p>
+    <div id="clock" class="clock">--:--:--.---</div>
+
+    <div class="stage">
+      <div id="count" class="count">–</div>
+      <div id="gauge" class="gauge"><div class="gauge-fill"></div></div>
+    </div>
+
+    <p id="hit-result" class="hit">스페이스바 또는 화면을 눌러 타이밍을 재보세요</p>
+
+    <section class="panel">
+      <label>미리 누르기(리드타임): <b id="lead-val">200</b> ms
+        <input id="lead" type="range" min="0" max="600" step="5" value="200" />
+      </label>
+      <label>수동 보정값(ms, 보통 0)
+        <input id="offset" type="number" value="0" step="1" />
+      </label>
+      <label><input id="sound" type="checkbox" checked /> 소리</label>
+      <label>모드
+        <select id="mode">
+          <option value="live">실전 가이드</option>
+          <option value="practice">연습</option>
+        </select>
+      </label>
+      <button id="start-practice" type="button" hidden>연습 시작 / 다음 라운드</button>
+    </section>
+
+    <pre id="stats" class="stats"></pre>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

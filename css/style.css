@@ -1,0 +1,25 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: system-ui, -apple-system, sans-serif;
+  background: #111; color: #eee; text-align: center;
+  -webkit-user-select: none; user-select: none;
+}
+.wrap { max-width: 520px; margin: 0 auto; padding: 16px; }
+.muted { color: #888; font-size: 14px; margin: 8px 0; }
+.clock { font-variant-numeric: tabular-nums; font-size: 34px; letter-spacing: 1px; }
+.stage { margin: 24px 0; }
+.count { font-size: 120px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.gauge { height: 14px; background: #333; border-radius: 8px; overflow: hidden; margin-top: 16px; }
+.gauge-fill { height: 100%; width: 0%; background: #35c46a; }
+.hit { font-size: 22px; min-height: 30px; }
+.hit.late { color: #ff6b6b; } .hit.early { color: #ffd93d; } .hit.good { color: #35c46a; }
+.panel { display: grid; gap: 12px; text-align: left; background: #1a1a1a; padding: 16px; border-radius: 12px; }
+.panel label { display: block; font-size: 15px; }
+.panel input[type="range"] { width: 100%; }
+.stats { text-align: left; background: #1a1a1a; padding: 12px; border-radius: 12px; min-height: 20px; white-space: pre-wrap; }
+#go-flash {
+  position: fixed; inset: 0; background: #35c46a; opacity: 0;
+  pointer-events: none; transition: opacity 90ms linear;
+}
+#go-flash.on { opacity: 0.85; transition: none; }
