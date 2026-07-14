@@ -10,6 +10,7 @@ export function enableAudio() {
 }
 export function beep(freq = 880, ms = 60, gain = 0.2) {
   if (!ctx) return;
+  if (ctx.state !== "running") ctx.resume(); // iOS가 도중에 잠갔으면 자가 복구
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.frequency.value = freq;

@@ -123,9 +123,10 @@ async function measureNet() {
 }
 
 // ---- 이벤트 ----
-function firstInteract() { enableAudio(); }
-window.addEventListener("pointerdown", firstInteract, { once: true });
-window.addEventListener("keydown", firstInteract, { once: true });
+// iOS는 백그라운드/전화/알림 후 소리 엔진을 다시 잠그므로, 상호작용·복귀 때마다 다시 푼다(멱등).
+window.addEventListener("pointerdown", enableAudio);
+window.addEventListener("keydown", enableAudio);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) enableAudio(); });
 
 window.addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); registerHit(); } });
 document.querySelector(".stage").addEventListener("pointerdown", registerHit);
@@ -133,6 +134,7 @@ document.querySelector(".stage").addEventListener("pointerdown", registerHit);
 // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
 $("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); registerHit(); });
 $("measure-net").addEventListener("click", measureNet);
+$("sound-test").addEventListener("click", () => { enableAudio(); beep(880, 200, 0.3); });
 
 $("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; save(window.localStorage, S); });
 $("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });
