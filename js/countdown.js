@@ -21,3 +21,14 @@ export function signalPhase(nowMs, targetMs, leadMs) {
   else phase = "idle";
   return { phase, msLeft };
 }
+
+// 소리 예약용: 정각(target)과 리드타임 기준으로 틱3·2·1과 정각음의 정확한 시각 목록.
+export function cueTimes(targetMs, leadMs) {
+  const goAt = targetMs - leadMs;
+  return [
+    { at: goAt - 3000, kind: "tick" },
+    { at: goAt - 2000, kind: "tick" },
+    { at: goAt - 1000, kind: "tick" },
+    { at: goAt, kind: "go" },
+  ];
+}

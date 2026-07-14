@@ -49,3 +49,21 @@ test("signalPhase: exact bucket boundaries", () => {
   assert.equal(signalPhase(t - 1000, t, 0).phase, "tick2"); // 1000ms left -> tick2 bucket
   assert.equal(signalPhase(t, t, 0).phase, "go");           // 0ms left -> go
 });
+
+import { cueTimes } from "../js/countdown.js";
+
+test("cueTimes: three ticks then go, all pulled by lead", () => {
+  const t = 100000;
+  assert.deepEqual(cueTimes(t, 200), [
+    { at: t - 200 - 3000, kind: "tick" },
+    { at: t - 200 - 2000, kind: "tick" },
+    { at: t - 200 - 1000, kind: "tick" },
+    { at: t - 200, kind: "go" },
+  ]);
+});
+
+test("cueTimes: zero lead aligns go with target", () => {
+  const cues = cueTimes(60000, 0);
+  assert.equal(cues[3].at, 60000);
+  assert.equal(cues[3].kind, "go");
+});

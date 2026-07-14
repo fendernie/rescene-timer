@@ -22,6 +22,23 @@ export function audioState() {
   return ctx ? ctx.state : "none";
 }
 
+// delaySec 뒤에 울리도록 오디오 시계에 예약. 기기 출력 지연만큼 당겨서 "들리는 시점"을 맞춘다.
+// 엔진이 잠겨 있으면 false를 반환해 호출자가 다음 프레임에 재시도하게 한다.
+export function scheduleBeepIn(delaySec, freq = 880, ms = 60, gain = 0.2) {
+  if (!ctx || ctx.state !== "running") return false;
+  const latency = ctx.outputLatency || ctx.baseLatency || 0;
+  const when = ctx.currentTime + Math.max(0, delaySec - latency);
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.frequency.value = freq;
+  g.gain.value = gain;
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.start(when);
+  osc.stop(when + ms / 1000);
+  return true;
+}
+
 export function beep(freq = 880, ms = 60, gain = 0.2) {
   if (!ctx) return;
   const play = () => {

@@ -1,8 +1,8 @@
 import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
-import { nextMinuteBoundary, msUntil, signalPhase } from "./countdown.js";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes } from "./countdown.js";
 import { hitError, stats, recommendLead } from "./hitMeter.js";
 import { load, save } from "./settings.js";
-import { enableAudio, beep, audioState } from "./beeper.js";
+import { enableAudio, beep, scheduleBeepIn, audioState } from "./beeper.js";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -20,7 +20,9 @@ $("mode").value = S.mode;
 
 function trueNow() { return nowWith(netOffset + S.manualOffsetMs); }
 
-function pickTarget() { target = nextMinuteBoundary(trueNow()); lastTargetForHit = target; }
+const scheduledCues = new Set(); // 이미 예약한 소리(시각 키). 목표가 바뀌면 비운다.
+
+function pickTarget() { target = nextMinuteBoundary(trueNow()); lastTargetForHit = target; scheduledCues.clear(); }
 
 // ---- 시각 소스 동기화 (best-effort) ----
 async function fetchSample() {
@@ -66,9 +68,22 @@ function loop() {
   document.querySelector(".gauge-fill").style.width = `${g * 100}%`;
 
   if (phase !== lastPhase) {
-    if (phase === "tick3" || phase === "tick2" || phase === "tick1") { if (S.soundOn) beep(660, 45, 0.15); }
-    if (phase === "go") { flash(); if (S.soundOn) beep(1200, 120, 0.25); }
+    if (phase === "go") flash(); // 시각 신호는 즉시. 소리는 아래에서 예약제로.
     lastPhase = phase;
+  }
+
+  // 소리는 발생 시점에 쏘지 않고, 800ms 전에 오디오 정밀 시계에 예약한다.
+  // (아이폰 등에서 출력 지연으로 소리가 밀리는 문제를 기기 지연 보정으로 해결)
+  if (S.soundOn) {
+    for (const c of cueTimes(target, S.leadMs)) {
+      const dms = c.at - now;
+      if (dms > 0 && dms <= 800 && !scheduledCues.has(c.at)) {
+        const ok = c.kind === "go"
+          ? scheduleBeepIn(dms / 1000, 1200, 120, 0.25)
+          : scheduleBeepIn(dms / 1000, 660, 45, 0.15);
+        if (ok) scheduledCues.add(c.at); // 실패(엔진 잠김)면 다음 프레임에 재시도
+      }
+    }
   }
   requestAnimationFrame(loop);
 }
