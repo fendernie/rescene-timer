@@ -114,10 +114,16 @@ function renderStats() {
   const bars = s.recent.map((e) => `${e >= 0 ? "+" : ""}${Math.round(e)}`).join("  ");
   let text =
     `시도 ${s.n}회 | 평균 ${s.mean.toFixed(0)}ms | 편차 ±${s.stdev.toFixed(0)}ms | 최고 ${s.best}ms\n최근: ${bars}`;
-  const rec = recommendLead(S.leadMs, s.mean, s.n);
-  if (rec !== null && rec !== S.leadMs) text += `\n추천 리드타임: ${rec}ms (현재 ${S.leadMs}ms)`;
+  const rec = recommendLead(S.leadMs, s.mean, s.n, -S.netDelayMs);
+  latestRec = rec !== null && rec !== S.leadMs ? rec : null;
+  if (latestRec !== null) {
+    const aimNote = S.netDelayMs > 0 ? ` (네트워크 지연 ${S.netDelayMs}ms 반영)` : "";
+    text += `\n추천 리드타임: ${latestRec}ms (현재 ${S.leadMs}ms)${aimNote}`;
+  }
+  $("apply-lead").hidden = latestRec === null;
   $("stats").textContent = text;
 }
+let latestRec = null; // renderStats가 계산한 최신 추천값 (적용 버튼용)
 
 // ---- 네트워크 지연 측정 (리센느 서버) ----
 const RESCENE_URL = "https://artist.mnetplus.world/main/stg/rescene-official";
@@ -136,9 +142,14 @@ async function measureNet() {
     }
   }
   const oneWay = estimateOneWay(rtts);
-  el.textContent = oneWay === null
-    ? "측정 실패 — 인터넷 연결을 확인하세요"
-    : `리센느 서버까지 추정 지연 약 ${oneWay}ms → 연습 목표: 약 -${oneWay}ms (빠름)`;
+  if (oneWay === null) {
+    el.textContent = "측정 실패 — 인터넷 연결을 확인하세요";
+    return;
+  }
+  S.netDelayMs = oneWay;
+  save(window.localStorage, S);
+  renderStats(); // 추천 리드타임 목표에 즉시 반영
+  el.textContent = `리센느 서버까지 추정 지연 약 ${oneWay}ms → 추천 리드타임 목표(-${oneWay}ms)에 자동 반영됨`;
 }
 
 // ---- 이벤트 ----
@@ -153,6 +164,13 @@ document.querySelector(".stage").addEventListener("pointerdown", registerHit);
 // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
 $("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); registerHit(); });
 $("measure-net").addEventListener("click", measureNet);
+$("apply-lead").addEventListener("click", () => {
+  if (latestRec === null) return;
+  S.leadMs = latestRec;
+  $("lead").value = S.leadMs; $("lead-val").textContent = S.leadMs;
+  save(window.localStorage, S);
+  renderStats();
+});
 $("sound-test").addEventListener("click", () => {
   enableAudio();
   beep(880, 300, 0.3);

@@ -48,3 +48,12 @@ test("recommendLead: rounds to 5 and clamps to [0,600]", () => {
   assert.equal(recommendLead(30, -100, 10), 0);
   assert.equal(recommendLead(580, 40, 10), 600);
 });
+
+test("recommendLead: aims at target error when given (network delay)", () => {
+  // 평균 -14ms인데 목표가 -50ms면 리드타임을 36ms 올려 더 일찍 누르게 유도
+  assert.equal(recommendLead(200, -14, 10, -50), 235);
+});
+
+test("recommendLead: null when mean already within ±10 of aim", () => {
+  assert.equal(recommendLead(200, -45, 10, -50), null);
+});

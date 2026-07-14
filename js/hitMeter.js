@@ -15,10 +15,12 @@ export function stats(errors) {
   return { n, mean, stdev, best, recent };
 }
 
-// 연습 평균 오차로 리드타임 조정값을 제안한다. 표본 부족/이미 정확하면 null.
-export function recommendLead(leadMs, meanMs, n) {
-  if (n < 5 || Math.abs(meanMs) <= 10) return null;
-  const raw = leadMs + meanMs; // 빠름(-)이면 리드타임을 줄이고, 늦음(+)이면 늘린다
+// 연습 평균 오차로 리드타임 조정값을 제안한다. 표본 부족/이미 목표 근처면 null.
+// aimMs: 목표 오차. 기본 0이지만, 네트워크 지연이 있으면 -지연(예: -50)을 넘겨
+// "지연만큼 미리 눌러 서버 도착이 00초 직후가 되게" 유도한다.
+export function recommendLead(leadMs, meanMs, n, aimMs = 0) {
+  if (n < 5 || Math.abs(meanMs - aimMs) <= 10) return null;
+  const raw = leadMs + meanMs - aimMs; // 평균 오차가 목표를 향해 이동하도록 리드타임을 옮긴다
   const rounded = Math.round(raw / 5) * 5; // 슬라이더 step에 맞춤
   return Math.max(0, Math.min(600, rounded));
 }

@@ -6,6 +6,7 @@ export const DEFAULTS = {
   manualOffsetMs: 0,
   soundOn: true,
   soundLatencyMs: 0, // 기기 소리 출력지연 수동 보정(소리가 화면보다 늦게 들리면 ↑)
+  netDelayMs: 0, // 마지막 측정한 편도 네트워크 지연(리드타임 추천 목표에 반영)
   targetMode: "nextMinute",
   mode: "live", // "live" | "practice"
   errors: [],
