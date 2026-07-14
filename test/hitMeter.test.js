@@ -43,9 +43,10 @@ test("recommendLead: shifts lead by mean error", () => {
   assert.equal(recommendLead(200, 20, 10), 220);
 });
 
-test("recommendLead: rounds to 5 and clamps to [0,600]", () => {
+test("recommendLead: rounds to 5 and clamps to [-300,600]", () => {
   assert.equal(recommendLead(200, -23, 10), 175);
-  assert.equal(recommendLead(30, -100, 10), 0);
+  assert.equal(recommendLead(30, -100, 10), -70); // 예측이 빠른 사람은 음수 리드타임이 정답
+  assert.equal(recommendLead(0, -400, 10), -300);
   assert.equal(recommendLead(580, 40, 10), 600);
 });
 

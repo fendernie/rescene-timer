@@ -37,9 +37,9 @@ export function cueTimes(targetMs, leadMs) {
 export function bgCueTimes(targetMs, leadMs) {
   const g = targetMs - leadMs;
   return [
-    { at: g - 30000, freq: 330, ms: 400, kind: "warn30" },
-    { at: g - 10000, freq: 523, ms: 120, kind: "warn10" },
-    { at: g - 9800, freq: 523, ms: 120, kind: "warn10" },
+    { at: g - 30000, freq: 440, ms: 500, kind: "warn30" }, // 폰 스피커에서 잘 들리게 톤 상향
+    { at: g - 10000, freq: 587, ms: 120, kind: "warn10" },
+    { at: g - 9800, freq: 587, ms: 120, kind: "warn10" },
     { at: g - 5000, freq: 660, ms: 80, kind: "count" },
     { at: g - 4000, freq: 700, ms: 80, kind: "count" },
     { at: g - 3000, freq: 750, ms: 80, kind: "count" },
