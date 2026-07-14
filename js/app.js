@@ -2,7 +2,7 @@ import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
 import { nextMinuteBoundary, msUntil, signalPhase } from "./countdown.js";
 import { hitError, stats, recommendLead } from "./hitMeter.js";
 import { load, save } from "./settings.js";
-import { enableAudio, beep } from "./beeper.js";
+import { enableAudio, beep, audioState } from "./beeper.js";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -134,7 +134,14 @@ document.querySelector(".stage").addEventListener("pointerdown", registerHit);
 // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
 $("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); registerHit(); });
 $("measure-net").addEventListener("click", measureNet);
-$("sound-test").addEventListener("click", () => { enableAudio(); beep(880, 200, 0.3); });
+$("sound-test").addEventListener("click", () => {
+  enableAudio();
+  beep(880, 300, 0.3);
+  const sess = navigator.audioSession ? "지원" : "미지원";
+  setTimeout(() => {
+    $("net-result").textContent = `[진단 v1.3] 소리엔진: ${audioState()} / iOS세션: ${sess}`;
+  }, 100);
+});
 
 $("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; save(window.localStorage, S); });
 $("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });
