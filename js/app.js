@@ -61,6 +61,8 @@ function flash() {
 function loop() {
   const now = trueNow();
   $("clock").textContent = fmt(now);
+  // iOS는 첫 터치 전까지 소리를 잠가둔다 — 잠겨 있으면 안내 표시
+  $("audio-hint").hidden = !(S.soundOn && audioState() !== "running");
   if (!target || msUntil(now, target) < -1000) pickTarget(); // 지나갔으면 다음 목표
   const { phase, msLeft } = signalPhase(now, target, S.leadMs);
   $("count").textContent = msLeft > 0 ? Math.ceil(msLeft / 1000) : "0";
