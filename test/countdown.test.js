@@ -67,3 +67,23 @@ test("cueTimes: zero lead aligns go with target", () => {
   assert.equal(cues[3].at, 60000);
   assert.equal(cues[3].kind, "go");
 });
+
+import { bgCueTimes } from "../js/countdown.js";
+
+test("bgCueTimes: full one-minute pattern pulled by lead", () => {
+  const t = 600000, lead = 200;
+  const cues = bgCueTimes(t, lead);
+  const g = t - lead;
+  assert.equal(cues.length, 9);
+  assert.deepEqual(cues.map((c) => c.at), [
+    g - 30000, g - 10000, g - 9800,
+    g - 5000, g - 4000, g - 3000, g - 2000, g - 1000, g,
+  ]);
+  assert.equal(cues[0].kind, "warn30");
+  assert.equal(cues[8].kind, "go");
+});
+
+test("bgCueTimes: countdown pitches rise toward go", () => {
+  const counts = bgCueTimes(600000, 0).filter((c) => c.kind === "count").map((c) => c.freq);
+  for (let i = 1; i < counts.length; i += 1) assert.ok(counts[i] > counts[i - 1]);
+});

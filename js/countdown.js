@@ -32,3 +32,19 @@ export function cueTimes(targetMs, leadMs) {
     { at: goAt, kind: "go" },
   ];
 }
+
+// 백그라운드 소리 모드용: 정각 1분 전부터의 소리 패턴 (30초 예고 → 10초 뚜뚜 → 5..1 상승음 → 정각음)
+export function bgCueTimes(targetMs, leadMs) {
+  const g = targetMs - leadMs;
+  return [
+    { at: g - 30000, freq: 330, ms: 400, kind: "warn30" },
+    { at: g - 10000, freq: 523, ms: 120, kind: "warn10" },
+    { at: g - 9800, freq: 523, ms: 120, kind: "warn10" },
+    { at: g - 5000, freq: 660, ms: 80, kind: "count" },
+    { at: g - 4000, freq: 700, ms: 80, kind: "count" },
+    { at: g - 3000, freq: 750, ms: 80, kind: "count" },
+    { at: g - 2000, freq: 800, ms: 80, kind: "count" },
+    { at: g - 1000, freq: 880, ms: 80, kind: "count" },
+    { at: g, freq: 1200, ms: 500, kind: "go" },
+  ];
+}

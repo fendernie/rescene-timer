@@ -1,8 +1,8 @@
 import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes } from "./countdown.js";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js";
 import { hitError, stats, recommendLead } from "./hitMeter.js";
 import { load, save } from "./settings.js";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency } from "./beeper.js";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -77,7 +77,8 @@ function loop() {
 
   // 소리는 발생 시점에 쏘지 않고, 800ms 전에 오디오 정밀 시계에 예약한다.
   // (아이폰 등에서 출력 지연으로 소리가 밀리는 문제를 기기 지연 보정으로 해결)
-  if (S.soundOn) {
+  // 백그라운드 모드 중에는 자체 카운트 소리가 있으므로 일반 틱음은 쉰다.
+  if (S.soundOn && !bgMode) {
     for (const c of cueTimes(target, S.leadMs)) {
       const dms = c.at - now;
       if (dms > 0 && dms <= 800 && !scheduledCues.has(c.at)) {
@@ -164,6 +165,39 @@ document.querySelector(".stage").addEventListener("pointerdown", registerHit);
 // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
 $("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); registerHit(); });
 $("measure-net").addEventListener("click", measureNet);
+// ---- 백그라운드 소리 모드: 5분치 정각 안내를 통째로 예약 ----
+let bgMode = false;
+const bgNodes = [];
+function startBgMode() {
+  enableAudio();
+  const now = trueNow();
+  let t = nextMinuteBoundary(now);
+  for (let i = 0; i < 5; i += 1) {
+    for (const c of bgCueTimes(t, S.leadMs)) {
+      const dms = c.at - now - S.soundLatencyMs;
+      if (dms <= 0) continue;
+      const node = scheduleBeepIn(dms / 1000, c.freq, c.ms, 0.3);
+      if (node) bgNodes.push(node);
+    }
+    t += 60_000;
+  }
+  if (!bgNodes.length) return; // 소리 엔진이 아직 잠김 — 안내문이 대신 뜬다
+  startKeepalive();
+  bgMode = true;
+  $("bg-toggle").textContent = "⏹ 백그라운드 소리 모드 끄기";
+  $("bg-status").textContent =
+    "켜짐 — 다른 앱으로 가도 5분간 매 정각 안내가 울립니다 (30초 전 예고 → 10초 전 뚜뚜 → 5·4·3·2·1 → 삐)";
+}
+function stopBgMode() {
+  for (const n of bgNodes) { try { n.stop(0); } catch { /* 이미 종료 */ } }
+  bgNodes.length = 0;
+  stopKeepalive();
+  bgMode = false;
+  $("bg-toggle").textContent = "📢 백그라운드 소리 모드 (5분)";
+  $("bg-status").textContent = "";
+}
+$("bg-toggle").addEventListener("click", () => (bgMode ? stopBgMode() : startBgMode()));
+
 $("apply-lead").addEventListener("click", () => {
   if (latestRec === null) return;
   S.leadMs = latestRec;

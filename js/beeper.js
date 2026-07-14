@@ -29,10 +29,28 @@ export function reportedLatency() {
   return typeof v === "number" ? v : null;
 }
 
+// 백그라운드에서도 오디오 세션이 살아 있도록 무음을 계속 재생 (음악 앱처럼 취급되게)
+let keepAlive = null;
+export function startKeepalive() {
+  if (!ctx || keepAlive) return;
+  const buf = ctx.createBuffer(1, 22050, 22050); // 1초 무음 루프
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  src.connect(ctx.destination);
+  src.start();
+  keepAlive = src;
+}
+export function stopKeepalive() {
+  if (!keepAlive) return;
+  try { keepAlive.stop(); } catch { /* 이미 종료 */ }
+  keepAlive = null;
+}
+
 // delaySec 뒤에 울리도록 오디오 시계에 예약. 기기 출력 지연만큼 당겨서 "들리는 시점"을 맞춘다.
-// 엔진이 잠겨 있으면 false를 반환해 호출자가 다음 프레임에 재시도하게 한다.
+// 성공하면 예약 노드(취소용)를, 엔진이 잠겨 있으면 null을 반환한다.
 export function scheduleBeepIn(delaySec, freq = 880, ms = 60, gain = 0.2) {
-  if (!ctx || ctx.state !== "running") return false;
+  if (!ctx || ctx.state !== "running") return null;
   const latency = ctx.outputLatency || ctx.baseLatency || 0;
   const when = ctx.currentTime + Math.max(0, delaySec - latency);
   const osc = ctx.createOscillator();
@@ -43,7 +61,7 @@ export function scheduleBeepIn(delaySec, freq = 880, ms = 60, gain = 0.2) {
   g.connect(ctx.destination);
   osc.start(when);
   osc.stop(when + ms / 1000);
-  return true;
+  return osc;
 }
 
 export function beep(freq = 880, ms = 60, gain = 0.2) {
