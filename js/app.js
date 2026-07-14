@@ -2,7 +2,7 @@ import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
 import { nextMinuteBoundary, msUntil, signalPhase, cueTimes } from "./countdown.js";
 import { hitError, stats, recommendLead } from "./hitMeter.js";
 import { load, save } from "./settings.js";
-import { enableAudio, beep, scheduleBeepIn, audioState } from "./beeper.js";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency } from "./beeper.js";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -14,6 +14,7 @@ let lastTargetForHit = null;
 
 // 설정 UI 초기화
 $("lead").value = S.leadMs; $("lead-val").textContent = S.leadMs;
+$("sound-lat").value = S.soundLatencyMs; $("sound-lat-val").textContent = S.soundLatencyMs;
 $("offset").value = S.manualOffsetMs;
 $("sound").checked = S.soundOn;
 $("mode").value = S.mode;
@@ -78,9 +79,10 @@ function loop() {
     for (const c of cueTimes(target, S.leadMs)) {
       const dms = c.at - now;
       if (dms > 0 && dms <= 800 && !scheduledCues.has(c.at)) {
+        const d = Math.max(0, dms - S.soundLatencyMs) / 1000; // 수동 소리 보정만큼 당김
         const ok = c.kind === "go"
-          ? scheduleBeepIn(dms / 1000, 1200, 120, 0.25)
-          : scheduleBeepIn(dms / 1000, 660, 45, 0.15);
+          ? scheduleBeepIn(d, 1200, 120, 0.25)
+          : scheduleBeepIn(d, 660, 45, 0.15);
         if (ok) scheduledCues.add(c.at); // 실패(엔진 잠김)면 다음 프레임에 재시도
       }
     }
@@ -154,11 +156,14 @@ $("sound-test").addEventListener("click", () => {
   beep(880, 300, 0.3);
   const sess = navigator.audioSession ? "지원" : "미지원";
   setTimeout(() => {
-    $("net-result").textContent = `[진단 v1.3] 소리엔진: ${audioState()} / iOS세션: ${sess}`;
+    const lat = reportedLatency();
+    const latTxt = lat === null ? "기기 미제공(수동 보정 필요)" : `${Math.round(lat * 1000)}ms(자동 보정됨)`;
+    $("net-result").textContent = `[진단 v1.5] 소리엔진: ${audioState()} / iOS세션: ${sess} / 출력지연: ${latTxt}`;
   }, 100);
 });
 
 $("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; save(window.localStorage, S); });
+$("sound-lat").addEventListener("input", (e) => { S.soundLatencyMs = Number(e.target.value); $("sound-lat-val").textContent = S.soundLatencyMs; save(window.localStorage, S); });
 $("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });
 $("sound").addEventListener("change", (e) => { S.soundOn = e.target.checked; save(window.localStorage, S); });
 function applyMode() {

@@ -5,6 +5,7 @@ export const DEFAULTS = {
   leadMs: 200,
   manualOffsetMs: 0,
   soundOn: true,
+  soundLatencyMs: 0, // 기기 소리 출력지연 수동 보정(소리가 화면보다 늦게 들리면 ↑)
   targetMode: "nextMinute",
   mode: "live", // "live" | "practice"
   errors: [],

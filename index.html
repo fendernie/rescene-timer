@@ -30,6 +30,9 @@
         <input id="offset" type="number" value="0" step="1" />
       </label>
       <label><input id="sound" type="checkbox" checked /> 소리</label>
+      <label>소리 보정(소리가 화면보다 늦으면 ↑): <b id="sound-lat-val">0</b> ms
+        <input id="sound-lat" type="range" min="0" max="400" step="10" value="0" />
+      </label>
       <button id="sound-test" type="button">🔊 소리 테스트</button>
       <label>모드
         <select id="mode">
@@ -43,7 +46,7 @@
     </section>
 
     <pre id="stats" class="stats"></pre>
-    <p class="muted">v1.4</p>
+    <p class="muted">v1.5</p>
   </main>
 
   <script type="module" src="js/app.js"></script>

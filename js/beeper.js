@@ -22,6 +22,13 @@ export function audioState() {
   return ctx ? ctx.state : "none";
 }
 
+// 기기가 알려주는 출력지연(초). 사파리 등 미지원 기기는 null.
+export function reportedLatency() {
+  if (!ctx) return null;
+  const v = ctx.outputLatency ?? ctx.baseLatency;
+  return typeof v === "number" ? v : null;
+}
+
 // delaySec 뒤에 울리도록 오디오 시계에 예약. 기기 출력 지연만큼 당겨서 "들리는 시점"을 맞춘다.
 // 엔진이 잠겨 있으면 false를 반환해 호출자가 다음 프레임에 재시도하게 한다.
 export function scheduleBeepIn(delaySec, freq = 880, ms = 60, gain = 0.2) {
