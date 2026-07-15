@@ -28,6 +28,7 @@
 
     <section class="panel">
       <label>미리 누르기(리드타임): <b id="lead-val">200</b> ms
+        <span class="muted" style="font-size:13px">— 늦음(+)이면 ↑ 올리고, 빠름(−)이면 ↓ 내리세요 (추천 버튼이 자동 계산)</span>
         <input id="lead" type="range" min="-300" max="600" step="5" value="200" />
       </label>
       <label>수동 보정값(ms, 보통 0)
@@ -52,7 +53,7 @@
     <pre id="stats" class="stats"></pre>
     <button id="apply-lead" type="button" hidden>✅ 추천 리드타임 적용</button>
     <p id="err-line" class="muted" style="color:#ff6b6b" hidden></p>
-    <p class="muted">v1.12</p>
+    <p class="muted">v1.13</p>
   </main>
 
   <script type="module" src="js/app.js"></script>
