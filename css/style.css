@@ -19,6 +19,7 @@ body {
 .gauge { height: 14px; background: #333; border-radius: 8px; overflow: hidden; margin-top: 16px; }
 .gauge-fill { height: 100%; width: 0%; background: #35c46a; }
 .hit { font-size: 22px; min-height: 30px; }
+.focus-warn { background: #7a4a00; color: #ffd93d; padding: 10px; border-radius: 10px; font-size: 16px; }
 .hit.late { color: #ff6b6b; } .hit.early { color: #ffd93d; } .hit.good { color: #35c46a; }
 .panel { display: grid; gap: 12px; text-align: left; background: #1a1a1a; padding: 16px; border-radius: 12px; }
 .panel label { display: block; font-size: 15px; }

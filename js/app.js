@@ -168,6 +168,10 @@ window.addEventListener("pointerdown", enableAudio);
 window.addEventListener("keydown", enableAudio);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) enableAudio(); });
 
+// 다른 창이 선택되면 키보드 입력이 이 페이지로 오지 않는다 — 그 상태를 눈에 보이게
+window.addEventListener("blur", () => { $("focus-hint").hidden = false; });
+window.addEventListener("focus", () => { $("focus-hint").hidden = true; });
+
 window.addEventListener("keydown", (e) => {
   if (e.code !== "Space") return;
   e.preventDefault();
