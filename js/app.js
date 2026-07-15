@@ -1,8 +1,10 @@
-import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js";
-import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js";
-import { load, save } from "./settings.js";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js";
+// 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
+// (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
+import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js?v=15";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=15";
+import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=15";
+import { load, save } from "./settings.js?v=15";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=15";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
