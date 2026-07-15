@@ -7,6 +7,15 @@ import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKe
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
 
+// 진단: 어떤 오류든 침묵하지 않고 화면에 드러낸다 (실전 중 원인 불명 멈춤 추적용)
+function showError(msg) {
+  const el = $("err-line");
+  el.hidden = false;
+  el.textContent = `⚠️ 오류: ${msg} — 이 문구를 캡처해서 알려주세요`;
+}
+window.addEventListener("error", (e) => showError(`${e.message} (${e.filename?.split("/").pop()}:${e.lineno})`));
+window.addEventListener("unhandledrejection", (e) => showError(String(e.reason)));
+
 let netOffset = 0;          // 네트워크 동기화 보정(ms)
 let target = null;          // 현재 목표 시각(ms)
 let lastPhase = "idle";
@@ -159,7 +168,13 @@ window.addEventListener("pointerdown", enableAudio);
 window.addEventListener("keydown", enableAudio);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) enableAudio(); });
 
-window.addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); registerHit(); } });
+window.addEventListener("keydown", (e) => {
+  if (e.code !== "Space") return;
+  e.preventDefault();
+  // 버튼/슬라이더에 포커스가 남아 있으면 스페이스가 그 컨트롤을 다시 작동시킬 수 있어 차단
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  registerHit();
+});
 document.querySelector(".stage").addEventListener("pointerdown", registerHit);
 // 버튼은 click(눌렀다 뗌)이 아니라 pointerdown(누르는 순간)에 기록 — 타이밍 오차 최소화.
 // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
