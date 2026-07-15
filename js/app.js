@@ -1,6 +1,6 @@
 import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js";
 import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js";
-import { hitError, stats, recommendLead } from "./hitMeter.js";
+import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js";
 import { load, save } from "./settings.js";
 import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js";
 
@@ -107,9 +107,11 @@ function registerHit() {
   const err = hitError(trueNow(), lastTargetForHit);
   const el = $("hit-result");
   const sign = err > 0 ? "늦음" : err < 0 ? "빠름" : "정확";
-  el.textContent = `${err >= 0 ? "+" : ""}${Math.round(err)} ms (${sign})`;
+  el.textContent = isRealAttempt(err)
+    ? `${err >= 0 ? "+" : ""}${Math.round(err)} ms (${sign})`
+    : `${err >= 0 ? "+" : ""}${Math.round(err)} ms — 목표에서 너무 멀어 기록 제외`;
   el.className = "hit " + (Math.abs(err) <= 30 ? "good" : err > 0 ? "late" : "early");
-  if (S.mode === "practice") {
+  if (S.mode === "practice" && isRealAttempt(err)) {
     S.errors.push(Math.round(err));
     if (S.errors.length > 200) S.errors = S.errors.slice(-200);
     save(window.localStorage, S);
@@ -221,8 +223,7 @@ $("apply-lead").addEventListener("click", () => {
   if (latestRec === null) return;
   S.leadMs = latestRec;
   $("lead").value = S.leadMs; $("lead-val").textContent = S.leadMs;
-  save(window.localStorage, S);
-  renderStats();
+  resetErrors(); // 새 리드타임 기준으로 다시 측정 시작
 });
 $("sound-test").addEventListener("click", () => {
   enableAudio();
@@ -235,7 +236,10 @@ $("sound-test").addEventListener("click", () => {
   }, 100);
 });
 
-$("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; save(window.localStorage, S); });
+function resetErrors() { S.errors = []; save(window.localStorage, S); renderStats(); }
+// 리드타임이 바뀌면 이전 조건의 기록은 무효 — 자동 초기화해서 평균 오염을 막는다
+$("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; resetErrors(); });
+$("reset-stats").addEventListener("click", resetErrors);
 $("sound-lat").addEventListener("input", (e) => { S.soundLatencyMs = Number(e.target.value); $("sound-lat-val").textContent = S.soundLatencyMs; save(window.localStorage, S); });
 $("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });
 $("sound").addEventListener("change", (e) => { S.soundOn = e.target.checked; save(window.localStorage, S); });

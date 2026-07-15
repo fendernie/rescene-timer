@@ -25,3 +25,9 @@ export function recommendLead(leadMs, meanMs, n, aimMs = 0) {
   // 음수 허용: 박자를 예측해 신호보다 먼저 누르는 사람은 신호를 늦게 울려야 00초에 맞는다
   return Math.max(-300, Math.min(600, rounded));
 }
+
+// 목표에서 ±1.5초를 벗어난 클릭은 "진짜 시도"가 아니므로 통계에서 제외한다.
+// (카운트다운 한참 전 몸풀기 클릭이 평균을 무너뜨리는 것 방지)
+export function isRealAttempt(errMs, windowMs = 1500) {
+  return Math.abs(errMs) <= windowMs;
+}

@@ -58,3 +58,12 @@ test("recommendLead: aims at target error when given (network delay)", () => {
 test("recommendLead: null when mean already within ±10 of aim", () => {
   assert.equal(recommendLead(200, -45, 10, -50), null);
 });
+
+import { isRealAttempt } from "../js/hitMeter.js";
+
+test("isRealAttempt: within ±1500ms only", () => {
+  assert.equal(isRealAttempt(55), true);
+  assert.equal(isRealAttempt(-1500), true);
+  assert.equal(isRealAttempt(-1501), false);
+  assert.equal(isRealAttempt(30000), false);
+});
