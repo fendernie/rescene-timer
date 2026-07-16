@@ -47,3 +47,9 @@ export function estimateOneWay(rttsMs) {
   if (!rttsMs.length) return null;
   return Math.round(Math.min(...rttsMs) / 2);
 }
+
+// 재동기화 결과 검증: 이미 동기화된 시계가 1초 넘게 점프하는 값은 오염된 측정으로 보고 버린다.
+export function isSaneShift(prevOffsetMs, nextOffsetMs, isFirstSync) {
+  if (isFirstSync) return true;
+  return Math.abs(nextOffsetMs - prevOffsetMs) <= 1000;
+}

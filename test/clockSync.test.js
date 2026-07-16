@@ -70,3 +70,15 @@ test("estimateOneWay: null on empty samples", () => {
 test("estimateOneWay: half of minimum rtt, rounded", () => {
   assert.equal(estimateOneWay([120, 95, 210]), 48);
 });
+
+import { isSaneShift } from "../js/clockSync.js";
+
+test("isSaneShift: first sync accepts anything", () => {
+  assert.equal(isSaneShift(0, 99999, true), true);
+});
+
+test("isSaneShift: rejects shifts over 1000ms after first sync", () => {
+  assert.equal(isSaneShift(50, 80, false), true);     // 30ms 조정 OK
+  assert.equal(isSaneShift(50, 1200, false), false);  // 1.15s 점프 → 오염 의심
+  assert.equal(isSaneShift(-20, -900, false), true);  // 880ms는 허용 경계 안
+});

@@ -1,10 +1,10 @@
 // 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
 // (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
-import { nowWith, syncOffset, estimateOneWay } from "./clockSync.js?v=15";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=15";
-import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=15";
-import { load, save } from "./settings.js?v=15";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=15";
+import { nowWith, syncOffset, estimateOneWay, isSaneShift } from "./clockSync.js?v=16";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=16";
+import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=16";
+import { load, save } from "./settings.js?v=16";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=16";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -48,14 +48,25 @@ async function fetchSample() {
   if (!Number.isFinite(serverMs)) throw new Error("bad time sample");
   return { serverMs, sentAt, recvAt };
 }
+let hasSynced = false;
 async function doSync() {
   try {
     const r = await syncOffset(fetchSample, 5);
-    if (r.ok) { netOffset = r.offsetMs; $("sync-status").textContent = `동기화됨 (추정오차 ±${Math.round(r.rttMs / 2)}ms)`; }
-    else throw new Error("no ok");
+    if (!r.ok) throw new Error("no ok");
+    // 재동기화가 1초 넘게 점프하면 오염된 측정 — 기존 시계 유지 (연습 기록 씹힘 방지)
+    if (!isSaneShift(netOffset, r.offsetMs, !hasSynced)) {
+      $("sync-status").textContent = `동기화됨 (직전 재동기화 이상값 무시함)`;
+      return;
+    }
+    netOffset = r.offsetMs;
+    hasSynced = true;
+    $("sync-status").textContent = `동기화됨 (추정오차 ±${Math.round(r.rttMs / 2)}ms)`;
   } catch {
-    netOffset = 0;
-    $("sync-status").textContent = "기기 시계 사용 중 (동기화 실패 — 대체로 정확하나 미확인)";
+    if (!hasSynced) {
+      netOffset = 0;
+      $("sync-status").textContent = "기기 시계 사용 중 (동기화 실패 — 대체로 정확하나 미확인)";
+    }
+    // 이미 동기화된 상태의 일시적 실패는 기존 시계를 그대로 유지
   }
 }
 
@@ -113,14 +124,21 @@ function registerHit() {
     ? `${err >= 0 ? "+" : ""}${Math.round(err)} ms (${sign})`
     : `${err >= 0 ? "+" : ""}${Math.round(err)} ms — 목표에서 너무 멀어 기록 제외`;
   el.className = "hit " + (Math.abs(err) <= 30 ? "good" : err > 0 ? "late" : "early");
-  if (S.mode === "practice" && isRealAttempt(err)) {
-    S.errors.push(Math.round(err));
-    if (S.errors.length > 200) S.errors = S.errors.slice(-200);
-    save(window.localStorage, S);
-    renderStats();
+  if (S.mode === "practice") {
+    if (isRealAttempt(err)) {
+      hitCount.recorded += 1;
+      S.errors.push(Math.round(err));
+      if (S.errors.length > 200) S.errors = S.errors.slice(-200);
+      save(window.localStorage, S);
+      renderStats();
+    } else {
+      hitCount.excluded += 1;
+    }
+    $("hit-count").textContent = `기록 ${hitCount.recorded} | 제외 ${hitCount.excluded}`;
   }
   return err; // Task 8에서 연습 기록에 사용
 }
+const hitCount = { recorded: 0, excluded: 0 }; // 이번 세션의 기록/제외 횟수 (씹힘 진단용)
 
 function renderStats() {
   const s = stats(S.errors);
