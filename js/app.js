@@ -1,10 +1,10 @@
 // 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
 // (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
-import { nowWith, syncOffset, estimateOneWay, isSaneShift } from "./clockSync.js?v=16";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=16";
-import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=16";
-import { load, save } from "./settings.js?v=16";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=16";
+import { nowWith, syncOffset, estimateOneWay, isSaneShift } from "./clockSync.js?v=17";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=17";
+import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=17";
+import { load, save } from "./settings.js?v=17";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=17";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -28,6 +28,7 @@ $("lead").value = S.leadMs; $("lead-val").textContent = S.leadMs;
 $("sound-lat").value = S.soundLatencyMs; $("sound-lat-val").textContent = S.soundLatencyMs;
 $("offset").value = S.manualOffsetMs;
 $("sound").checked = S.soundOn;
+$("release-mode").checked = S.releaseMode;
 $("mode").value = S.mode;
 
 function trueNow() { return nowWith(netOffset + S.manualOffsetMs); }
@@ -194,17 +195,30 @@ window.addEventListener("pointerdown", enableAudio);
 window.addEventListener("keydown", enableAudio);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) enableAudio(); });
 
+// 측정 시점: 기본은 누르는 순간(pointerdown/keydown). "뗄 때 측정"이 켜져 있으면
+// 떼는 순간(pointerup/keyup)에 기록 — 실전 제출 동작(홀드-릴리즈)과 같은 동작으로 보정하기 위함.
 window.addEventListener("keydown", (e) => {
   if (e.code !== "Space") return;
   e.preventDefault();
   // 버튼/슬라이더에 포커스가 남아 있으면 스페이스가 그 컨트롤을 다시 작동시킬 수 있어 차단
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-  registerHit();
+  if (!S.releaseMode) registerHit();
 });
-document.querySelector(".stage").addEventListener("pointerdown", registerHit);
-// 버튼은 click(눌렀다 뗌)이 아니라 pointerdown(누르는 순간)에 기록 — 타이밍 오차 최소화.
+window.addEventListener("keyup", (e) => {
+  if (e.code !== "Space") return;
+  e.preventDefault();
+  if (S.releaseMode) registerHit();
+});
+document.querySelector(".stage").addEventListener("pointerdown", () => { if (!S.releaseMode) registerHit(); });
+document.querySelector(".stage").addEventListener("pointerup", () => { if (S.releaseMode) registerHit(); });
+// 버튼은 click(눌렀다 뗌)이 아니라 press/release 순간에 직접 기록 — 타이밍 오차 최소화.
 // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
-$("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); registerHit(); });
+$("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); if (!S.releaseMode) registerHit(); });
+$("hit-btn").addEventListener("pointerup", (e) => { e.preventDefault(); if (S.releaseMode) registerHit(); });
+$("release-mode").addEventListener("change", (e) => {
+  S.releaseMode = e.target.checked;
+  resetErrors(); // 측정 방식이 바뀌면 이전 기록은 다른 조건 — 새로 측정
+});
 $("measure-net").addEventListener("click", measureNet);
 // ---- 백그라운드 소리 모드: 5분치 정각 안내를 통째로 예약 ----
 let bgMode = false;

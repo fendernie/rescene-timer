@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>리센느 00초 가이드</title>
-  <link rel="stylesheet" href="css/style.css?v=16" />
+  <link rel="stylesheet" href="css/style.css?v=17" />
 </head>
 <body>
   <div id="go-flash" aria-hidden="true"></div>
@@ -36,6 +36,7 @@
         <input id="offset" type="number" value="0" step="1" />
       </label>
       <label><input id="sound" type="checkbox" checked /> 소리</label>
+      <label><input id="release-mode" type="checkbox" /> 뗄 때 측정 — 누르고 있다가 떼는 제출 방식이면 켜기</label>
       <label>소리 보정(소리가 화면보다 늦으면 ↑): <b id="sound-lat-val">0</b> ms
         <input id="sound-lat" type="range" min="0" max="400" step="10" value="0" />
       </label>
@@ -55,9 +56,9 @@
     <button id="apply-lead" type="button" hidden>✅ 추천 리드타임 적용</button>
     <button id="reset-stats" type="button">🔄 연습 기록 초기화</button>
     <p id="err-line" class="muted" style="color:#ff6b6b" hidden></p>
-    <p class="muted">v1.16</p>
+    <p class="muted">v1.17</p>
   </main>
 
-  <script type="module" src="js/app.js?v=16"></script>
+  <script type="module" src="js/app.js?v=17"></script>
 </body>
 </html>
