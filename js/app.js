@@ -1,10 +1,11 @@
 // 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
 // (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
-import { nowWith, syncOffset, estimateOneWay, isSaneShift } from "./clockSync.js?v=17";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=17";
-import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=17";
-import { load, save } from "./settings.js?v=17";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=17";
+import { nowWith, syncOffset, estimateOneWay, isSaneShift } from "./clockSync.js?v=18";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=18";
+import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=18";
+import { load, save } from "./settings.js?v=18";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=18";
+import { buildFields, elapsedSec } from "./rehearsal.js?v=18";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -96,6 +97,13 @@ function loop() {
   if (phase !== lastPhase) {
     if (phase === "go") flash(); // 시각 신호는 즉시. 소리는 아래에서 예약제로.
     lastPhase = phase;
+  }
+
+  // 리허설: 정각이 되면 모의 폼을 한 번만 열기
+  if (rehearsalTarget !== null && now >= rehearsalTarget) {
+    rehearsalOpenAt = rehearsalTarget;
+    rehearsalTarget = null;
+    openRehearsal();
   }
 
   // 소리는 발생 시점에 쏘지 않고, 800ms 전에 오디오 정밀 시계에 예약한다.
@@ -199,6 +207,8 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) enab
 // 떼는 순간(pointerup/keyup)에 기록 — 실전 제출 동작(홀드-릴리즈)과 같은 동작으로 보정하기 위함.
 window.addEventListener("keydown", (e) => {
   if (e.code !== "Space") return;
+  // 리허설 폼 등 글자 입력 중에는 스페이스가 "띄어쓰기"여야 한다 — 측정 가로채기 금지
+  if (e.target.matches?.("input[type=text], input[type=tel], input[type=number], textarea")) return;
   e.preventDefault();
   // 버튼/슬라이더에 포커스가 남아 있으면 스페이스가 그 컨트롤을 다시 작동시킬 수 있어 차단
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -206,6 +216,7 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => {
   if (e.code !== "Space") return;
+  if (e.target.matches?.("input[type=text], input[type=tel], input[type=number], textarea")) return;
   e.preventDefault();
   if (S.releaseMode) registerHit();
 });
@@ -252,6 +263,48 @@ function stopBgMode() {
   $("bg-status").textContent = "";
 }
 $("bg-toggle").addEventListener("click", () => (bgMode ? stopBgMode() : startBgMode()));
+
+// ---- 체크리스트: 진행도 표시 + 공지 정독 항목 강조 ----
+const chkItems = [...document.querySelectorAll(".chk-item")];
+function renderChecklist() {
+  const done = chkItems.filter((c) => c.checked).length;
+  $("chk-progress").textContent = `${done}/${chkItems.length}${done === chkItems.length ? " — 준비 완료! 🎯" : ""}`;
+  $("chk-notice-label").classList.toggle("done", $("chk-notice").checked);
+}
+chkItems.forEach((c) => c.addEventListener("change", renderChecklist));
+
+// ---- 리허설(모의 신청 폼): 정각에 열림 → 작성 → 제출 시간 측정 ----
+let rehearsalTarget = null; // 열릴 정각(ms). null이면 비활성
+let rehearsalOpenAt = null; // 실제로 열린 시각(ms) — 소요시간 측정 기준
+let rehearsalBest = null;
+function armRehearsal() {
+  rehearsalTarget = nextMinuteBoundary(trueNow());
+  $("rehearsal-form").hidden = true;
+  $("rehearsal-result").textContent = "";
+  $("rehearsal-status").textContent = "대기 중 — 정각이 되면 폼이 열립니다. 카운트다운을 보세요!";
+}
+function openRehearsal() {
+  const fields = buildFields(Math.random());
+  const form = $("rehearsal-form");
+  form.innerHTML = fields
+    .map((f, i) => `<label>${f}<input type="text" data-idx="${i}" autocomplete="off" /></label>`)
+    .join("") + `<button id="rehearsal-submit" type="button">제출</button>`;
+  form.hidden = false;
+  $("rehearsal-status").textContent = `폼 열림! (항목 ${fields.length}개 — 끝까지 확인했나요?)`;
+  document.getElementById("rehearsal-submit").addEventListener("click", () => {
+    const empty = [...form.querySelectorAll("input")].filter((i) => !i.value.trim());
+    if (empty.length) {
+      $("rehearsal-result").textContent = `❌ 빈칸 ${empty.length}개! 실전이었으면 무효 — 끝까지 스크롤 습관!`;
+      return;
+    }
+    const sec = elapsedSec(rehearsalOpenAt, trueNow());
+    if (rehearsalBest === null || sec < rehearsalBest) rehearsalBest = sec;
+    $("rehearsal-result").textContent = `✅ 제출 완료: 열림 후 ${sec}초 (세션 최고 ${rehearsalBest}초)`;
+    form.hidden = true;
+    $("rehearsal-status").textContent = "";
+  });
+}
+$("rehearsal-btn").addEventListener("click", armRehearsal);
 
 $("apply-lead").addEventListener("click", () => {
   if (latestRec === null) return;

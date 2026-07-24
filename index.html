@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>리센느 00초 가이드</title>
-  <link rel="stylesheet" href="css/style.css?v=17" />
+  <link rel="stylesheet" href="css/style.css?v=18" />
 </head>
 <body>
   <div id="go-flash" aria-hidden="true"></div>
@@ -52,13 +52,34 @@
       <p id="net-result" class="muted"></p>
     </section>
 
+    <section class="panel">
+      <b>✅ 실전 체크리스트 <span id="chk-progress" class="muted"></span></b>
+      <label class="chk chk-warn" id="chk-notice-label"><input type="checkbox" class="chk-item" id="chk-notice" />
+        ⚠️ <b>공지에 안내된 기입 항목을 끝까지 읽었고, 모든 항목의 답을 메모에 준비했다</b> (지난 실패 원인 — 이거 안 하면 실전 금지!)</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 러스챗 로그인 상태 확인 (페이지 이동해서 안 풀렸는지)</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 지금 쓸 네트워크에서 [네트워크 지연 측정] 완료</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 연습 5회 → 추천 적용 → "✅ 도달" 확인</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> "뗄 때 측정" 설정 = 실전 제출 동작과 일치</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 소리 확인 (틱 소리 실제로 들림)</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 폼 열리면: 채우기 전에 <b>끝까지 스크롤 먼저!</b></label>
+    </section>
+
+    <section class="panel">
+      <b>🎬 리허설 (모의 신청 폼)</b>
+      <p class="muted">실전 흐름 그대로: 정각에 폼이 열리고, 가끔 예상 밖 항목이 섞입니다. 열림→제출 시간이 측정돼요.</p>
+      <button id="rehearsal-btn" type="button">다음 정각에 모의 폼 열기</button>
+      <p id="rehearsal-status" class="muted"></p>
+      <div id="rehearsal-form" class="mock-form" hidden></div>
+      <p id="rehearsal-result"></p>
+    </section>
+
     <pre id="stats" class="stats"></pre>
     <button id="apply-lead" type="button" hidden>✅ 추천 리드타임 적용</button>
     <button id="reset-stats" type="button">🔄 연습 기록 초기화</button>
     <p id="err-line" class="muted" style="color:#ff6b6b" hidden></p>
-    <p class="muted">v1.17</p>
+    <p class="muted">v1.18</p>
   </main>
 
-  <script type="module" src="js/app.js?v=17"></script>
+  <script type="module" src="js/app.js?v=18"></script>
 </body>
 </html>

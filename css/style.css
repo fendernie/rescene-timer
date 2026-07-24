@@ -25,6 +25,12 @@ body {
 .panel label { display: block; font-size: 15px; }
 .panel input[type="range"] { width: 100%; }
 .stats { text-align: left; background: #1a1a1a; padding: 12px; border-radius: 12px; min-height: 20px; white-space: pre-wrap; }
+.chk { display: block; font-size: 15px; padding: 6px 8px; border-radius: 8px; }
+.chk-warn { background: #4a1515; border: 1px solid #ff6b6b; }
+.chk-warn.done { background: #14351f; border-color: #35c46a; }
+.mock-form { display: grid; gap: 10px; padding: 12px; background: #232323; border-radius: 10px; }
+.mock-form input { padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #444; background: #111; color: #eee; }
+.mock-form button { padding: 12px; font-size: 17px; font-weight: 700; background: #35c46a; color: #111; border: 0; border-radius: 10px; cursor: pointer; }
 #go-flash {
   position: fixed; inset: 0; background: #35c46a; opacity: 0;
   pointer-events: none; transition: opacity 90ms linear;
