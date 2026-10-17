@@ -34,3 +34,13 @@ test("save swallows storage errors (private mode)", () => {
   const throwing = { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); } };
   assert.doesNotThrow(() => save(throwing, DEFAULTS));
 });
+
+test("load migrates v1 settings: release mode on, old practice errors cleared, lead kept", () => {
+  const store = memStore();
+  store.setItem("rescene-timer", JSON.stringify({ leadMs: 30, releaseMode: false, errors: [1, 2] }));
+  const s = load(store);
+  assert.equal(s.version, 2);
+  assert.equal(s.releaseMode, true);
+  assert.deepEqual(s.errors, []);
+  assert.equal(s.leadMs, 30);
+});

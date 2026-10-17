@@ -4,82 +4,101 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>리센느 00초 가이드</title>
-  <link rel="stylesheet" href="css/style.css?v=18" />
+  <link rel="stylesheet" href="css/style.css?v=20" />
 </head>
 <body>
   <div id="go-flash" aria-hidden="true"></div>
 
   <main class="wrap">
+    <!-- ===== 실전 화면: 항상 보이는 부분 ===== -->
     <p id="sync-status" class="muted">시계 동기화 중…</p>
     <div id="clock" class="clock">--:--:--.---</div>
-
-    <button id="hit-btn" class="hit-btn" type="button">🎯 지금! (스페이스바와 동일)</button>
-    <p id="audio-hint" class="muted" hidden>🔇 소리 대기 중 — 화면을 한 번 탭하면 켜집니다</p>
+    <p id="calib-line" class="calib-line">⚡ 아직 보정 전 — 아래 [자동 보정]부터 하세요</p>
 
     <div class="stage">
+      <div id="count-label" class="muted">다음 정각까지</div>
       <div id="count" class="count">–</div>
       <div id="gauge" class="gauge"><div class="gauge-fill"></div></div>
     </div>
 
-    <p id="hit-result" class="hit">스페이스바 또는 화면을 눌러 타이밍을 재보세요</p>
-    <p id="hit-count" class="muted"></p>
+    <button id="hit-btn" class="hit-btn" type="button">🎯 누르고 있다가 "삐"에 떼기 (스페이스바 동일)</button>
+    <p id="audio-hint" class="muted" hidden>🔇 소리 대기 중 — 화면을 한 번 클릭하면 켜집니다</p>
+    <p id="hit-result" class="hit">&nbsp;</p>
+    <p id="hit-detail" class="muted">&nbsp;</p>
 
-    <button id="bg-toggle" type="button">📢 백그라운드 소리 모드 (5분)</button>
-    <p id="bg-status" class="muted"></p>
+    <!-- ===== 1. 자동 보정 ===== -->
+    <details class="panel" open>
+      <summary>⚡ 자동 보정 (약 1분 반)</summary>
+      <p class="muted left">
+        실전과 똑같이 <b>트랙패드를 미리 꾹 누르고 있다가 "삐"에 맞춰 떼세요.</b>
+        8초 간격으로 5번 연습 → 리드타임 자동 적용 → 확인 3번.
+        <br />목표는 <b>정각이 아니라 "정각 + 안전 여유"에 서버 도착</b>이에요 (정각 전 도착 = 최후순위라서).
+      </p>
+      <div class="row">
+        <button id="calib-btn" type="button" class="primary">⚡ 자동 보정 시작</button>
+        <button id="calib-stop" type="button" hidden>중단</button>
+      </div>
+      <p id="calib-progress" class="calib-progress"></p>
+      <pre id="calib-result" class="stats" hidden></pre>
+    </details>
 
-    <section class="panel">
-      <label>미리 누르기(리드타임): <b id="lead-val">200</b> ms
-        <span class="muted" style="font-size:13px">— 늦음(+)이면 ↑ 올리고, 빠름(−)이면 ↓ 내리세요 (추천 버튼이 자동 계산)</span>
-        <input id="lead" type="range" min="-300" max="600" step="5" value="200" />
+    <!-- ===== 2. 체크리스트 + 공지 항목 ===== -->
+    <details class="panel" open>
+      <summary>✅ 실전 체크리스트 <span id="chk-progress" class="muted"></span></summary>
+      <label class="notice-box">📋 <b>공지의 기입 항목을 그대로 붙여넣기</b> (한 줄에 하나) — 리허설 폼이 이 항목 그대로 나와요
+        <textarea id="notice-fields" rows="4" placeholder="예)&#10;이름&#10;생년월일 6자리&#10;버블 구독 멤버"></textarea>
       </label>
-      <label>수동 보정값(ms, 보통 0)
-        <input id="offset" type="number" value="0" step="1" />
-      </label>
-      <label><input id="sound" type="checkbox" checked /> 소리</label>
-      <label><input id="release-mode" type="checkbox" /> 뗄 때 측정 — 누르고 있다가 떼는 제출 방식이면 켜기</label>
-      <label>소리 보정(소리가 화면보다 늦으면 ↑): <b id="sound-lat-val">0</b> ms
-        <input id="sound-lat" type="range" min="0" max="400" step="10" value="0" />
-      </label>
-      <button id="sound-test" type="button">🔊 소리 테스트</button>
-      <label>모드
-        <select id="mode">
-          <option value="live">실전 가이드</option>
-          <option value="practice">연습</option>
-        </select>
-      </label>
-      <button id="start-practice" type="button" hidden>연습 시작 / 다음 라운드</button>
-      <button id="measure-net" type="button">네트워크 지연 측정 (리센느 서버)</button>
-      <p id="net-result" class="muted"></p>
-    </section>
-
-    <section class="panel">
-      <b>✅ 실전 체크리스트 <span id="chk-progress" class="muted"></span></b>
+      <p id="notice-status" class="muted left"></p>
       <label class="chk chk-warn" id="chk-notice-label"><input type="checkbox" class="chk-item" id="chk-notice" />
-        ⚠️ <b>공지에 안내된 기입 항목을 끝까지 읽었고, 모든 항목의 답을 메모에 준비했다</b> (지난 실패 원인 — 이거 안 하면 실전 금지!)</label>
-      <label class="chk"><input type="checkbox" class="chk-item" /> 러스챗 로그인 상태 확인 (페이지 이동해서 안 풀렸는지)</label>
-      <label class="chk"><input type="checkbox" class="chk-item" /> 지금 쓸 네트워크에서 [네트워크 지연 측정] 완료</label>
-      <label class="chk"><input type="checkbox" class="chk-item" /> 연습 5회 → 추천 적용 → "✅ 도달" 확인</label>
-      <label class="chk"><input type="checkbox" class="chk-item" /> "뗄 때 측정" 설정 = 실전 제출 동작과 일치</label>
-      <label class="chk"><input type="checkbox" class="chk-item" /> 소리 확인 (틱 소리 실제로 들림)</label>
-      <label class="chk"><input type="checkbox" class="chk-item" /> 폼 열리면: 채우기 전에 <b>끝까지 스크롤 먼저!</b></label>
-    </section>
+        ⚠️ <b>공지 항목을 끝까지 읽고, 모든 답을 메모에 준비했다</b> (지난 실패 원인!)</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 공지 항목으로 🎬 리허설 1회 성공</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 러스챗 로그인 상태 확인 (새로고침해도 안 풀림)</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 맥 설정 → 트랙패드 → <b>"강한 클릭 및 햅틱 피드백" 끄기</b></label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 가이드 창과 러스챗 창을 <b>나란히</b> (가이드 창을 가리면 소리가 밀릴 수 있음)</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 실전과 같은 소리 장치(스피커/이어폰)로 소리 확인</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 실전 <b>10분 전</b> ⚡ 자동 보정 → "✅ 준비 완료"</label>
+      <label class="chk"><input type="checkbox" class="chk-item" /> 폼 열리면 채우기 전에 <b>끝까지 스크롤 먼저!</b> → 다 채우고 제출 버튼 위에서 대기</label>
+    </details>
 
-    <section class="panel">
-      <b>🎬 리허설 (모의 신청 폼)</b>
-      <p class="muted">실전 흐름 그대로: 정각에 폼이 열리고, 가끔 예상 밖 항목이 섞입니다. 열림→제출 시간이 측정돼요.</p>
+    <!-- ===== 3. 리허설 ===== -->
+    <details class="panel">
+      <summary>🎬 리허설 (모의 신청 폼)</summary>
+      <p class="muted left">정각에 폼이 열립니다. 공지 항목을 붙여넣었으면 그 항목 그대로, 아니면 가끔 예상 밖 항목이 섞여요.</p>
       <button id="rehearsal-btn" type="button">다음 정각에 모의 폼 열기</button>
       <p id="rehearsal-status" class="muted"></p>
       <div id="rehearsal-form" class="mock-form" hidden></div>
       <p id="rehearsal-result"></p>
-    </section>
+    </details>
 
-    <pre id="stats" class="stats"></pre>
-    <button id="apply-lead" type="button" hidden>✅ 추천 리드타임 적용</button>
-    <button id="reset-stats" type="button">🔄 연습 기록 초기화</button>
+    <!-- ===== 4. 세부 설정 ===== -->
+    <details class="panel">
+      <summary>⚙️ 세부 설정</summary>
+      <label>미리 울리기(리드타임): <b id="lead-val">200</b> ms
+        <span class="muted small">— 자동 보정이 맞춰줍니다. 손으로 바꾸면 보정 결과는 무효가 돼요</span>
+        <input id="lead" type="range" min="-300" max="600" step="5" value="200" />
+      </label>
+      <label><input id="release-mode" type="checkbox" checked /> 뗄 때 측정 (권장 — 웹 버튼은 뗄 때 실행됨)</label>
+      <label><input id="sound" type="checkbox" checked /> 소리</label>
+      <label>소리 보정(소리가 화면보다 늦으면 ↑): <b id="sound-lat-val">0</b> ms
+        <input id="sound-lat" type="range" min="0" max="400" step="10" value="0" />
+      </label>
+      <label>수동 시계 보정값(ms, 보통 0)
+        <input id="offset" type="number" value="0" step="1" />
+      </label>
+      <div class="row">
+        <button id="sound-test" type="button">🔊 소리 테스트</button>
+        <button id="measure-net" type="button">네트워크 지연 측정</button>
+      </div>
+      <p id="net-result" class="muted left"></p>
+      <button id="bg-toggle" type="button">📢 백그라운드 소리 모드 (5분)</button>
+      <p id="bg-status" class="muted"></p>
+      <button id="reset-calib" type="button">🔄 보정 결과 초기화</button>
+    </details>
+
     <p id="err-line" class="muted" style="color:#ff6b6b" hidden></p>
-    <p class="muted">v1.18</p>
+    <p class="muted">v2.0</p>
   </main>
 
-  <script type="module" src="js/app.js?v=18"></script>
+  <script type="module" src="js/app.js?v=20"></script>
 </body>
 </html>

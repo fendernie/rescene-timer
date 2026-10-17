@@ -1,14 +1,18 @@
 // 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
 // (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
-import { nowWith, syncOffset, estimateOneWay, isSaneShift } from "./clockSync.js?v=18";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=18";
-import { hitError, stats, recommendLead, isRealAttempt } from "./hitMeter.js?v=18";
-import { load, save } from "./settings.js?v=18";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=18";
-import { buildFields, elapsedSec } from "./rehearsal.js?v=18";
+import { syncOffset, estimateOneWay, isSaneShift, mono, wallOffset, jitterOf } from "./clockSync.js?v=20";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=20";
+import { hitError, isRealAttempt } from "./hitMeter.js?v=20";
+import { load, save } from "./settings.js?v=20";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=20";
+import { buildFields, elapsedSec, parseFields } from "./rehearsal.js?v=20";
+import {
+  planAdjust, checkVerify, practiceTargets, robustSummary, totalSigma, earlyRisk, clampLead,
+} from "./calibration.js?v=20";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
+const persist = () => save(window.localStorage, S);
 
 // 진단: 어떤 오류든 침묵하지 않고 화면에 드러낸다 (실전 중 원인 불명 멈춤 추적용)
 function showError(msg) {
@@ -19,10 +23,11 @@ function showError(msg) {
 window.addEventListener("error", (e) => showError(`${e.message} (${e.filename?.split("/").pop()}:${e.lineno})`));
 window.addEventListener("unhandledrejection", (e) => showError(String(e.reason)));
 
-let netOffset = 0;          // 네트워크 동기화 보정(ms)
-let target = null;          // 현재 목표 시각(ms)
+let netOffset = 0;      // 단조시계 → 표준시 보정(ms)
+let lastWall = null;    // 마지막으로 받아들인 벽시계 기준 오프셋 (점프 검사용)
+let clockUncMs = 50;    // 시계 동기화 추정오차(편도). 동기화 전엔 보수적으로 50
+let target = null;      // 현재 목표 시각(ms)
 let lastPhase = "idle";
-let lastTargetForHit = null;
 
 // 설정 UI 초기화
 $("lead").value = S.leadMs; $("lead-val").textContent = S.leadMs;
@@ -30,153 +35,66 @@ $("sound-lat").value = S.soundLatencyMs; $("sound-lat-val").textContent = S.soun
 $("offset").value = S.manualOffsetMs;
 $("sound").checked = S.soundOn;
 $("release-mode").checked = S.releaseMode;
-$("mode").value = S.mode;
+$("notice-fields").value = S.noticeFields.join("\n");
 
-function trueNow() { return nowWith(netOffset + S.manualOffsetMs); }
+// 시각은 전부 단조시계 기반 — 맥이 시계를 미세 조정해도 카운트다운이 튀지 않는다.
+function trueNow() { return mono() + netOffset + S.manualOffsetMs; }
+
+// 입력 이벤트의 "실제 입력 시각". 처리 시각(화면 그리는 중이면 밀림) 대신 브라우저가 찍어둔 시각을 쓴다.
+function eventNow(e) {
+  const ts = e?.timeStamp;
+  const age = performance.now() - ts;
+  const base = typeof ts === "number" && ts > 0 && age >= 0 && age < 1000 ? performance.timeOrigin + ts : mono();
+  return base + netOffset + S.manualOffsetMs;
+}
 
 const scheduledCues = new Set(); // 이미 예약한 소리(시각 키). 목표가 바뀌면 비운다.
-
-function pickTarget() { target = nextMinuteBoundary(trueNow()); lastTargetForHit = target; scheduledCues.clear(); }
+function setTarget(t) {
+  target = t;
+  scheduledCues.clear();
+  for (const at of hiddenNodes.keys()) scheduledCues.add(at); // 숨김 중 미리 예약한 신호는 중복 예약 금지
+}
 
 // ---- 시각 소스 동기화 (best-effort) ----
 async function fetchSample() {
-  const sentAt = Date.now();
-  // Date 헤더(1초 해상도) 기반 안전한 fallback 소스. CORS 허용 엔드포인트.
+  const sentAt = mono();
   const res = await fetch("https://www.cloudflare.com/cdn-cgi/trace", { cache: "no-store" });
-  const recvAt = Date.now();
+  const recvAt = mono();
   const text = await res.text();
   const m = text.match(/ts=([0-9.]+)/);
   const serverMs = m ? Math.round(parseFloat(m[1]) * 1000) : Date.parse(res.headers.get("date"));
   if (!Number.isFinite(serverMs)) throw new Error("bad time sample");
   return { serverMs, sentAt, recvAt };
 }
-let hasSynced = false;
 async function doSync() {
   try {
-    const r = await syncOffset(fetchSample, 5);
+    const r = await syncOffset(fetchSample, 8);
     if (!r.ok) throw new Error("no ok");
-    // 재동기화가 1초 넘게 점프하면 오염된 측정 — 기존 시계 유지 (연습 기록 씹힘 방지)
-    if (!isSaneShift(netOffset, r.offsetMs, !hasSynced)) {
-      $("sync-status").textContent = `동기화됨 (직전 재동기화 이상값 무시함)`;
+    // 1초 넘는 점프는 오염된 측정 — 기존 시계 유지. 단, 벽시계 기준으로 비교해 노트북 잠자기는 정상 처리.
+    const wall = wallOffset(r.offsetMs, Date.now(), mono());
+    if (!isSaneShift(lastWall ?? 0, wall, lastWall === null)) {
+      $("sync-status").textContent = "시계 동기화됨 (직전 재동기화 이상값 무시함)";
       return;
     }
     netOffset = r.offsetMs;
-    hasSynced = true;
-    $("sync-status").textContent = `동기화됨 (추정오차 ±${Math.round(r.rttMs / 2)}ms)`;
+    lastWall = wall;
+    clockUncMs = Math.round(r.rttMs / 2);
+    $("sync-status").textContent = `시계 동기화됨 (추정오차 ±${clockUncMs}ms)`;
   } catch {
-    if (!hasSynced) {
-      netOffset = 0;
-      $("sync-status").textContent = "기기 시계 사용 중 (동기화 실패 — 대체로 정확하나 미확인)";
-    }
-    // 이미 동기화된 상태의 일시적 실패는 기존 시계를 그대로 유지
-  }
-}
-
-// ---- 렌더 루프 ----
-function fmt(ms) {
-  const d = new Date(ms);
-  const p = (n, l = 2) => String(n).padStart(l, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
-}
-function flash() {
-  $("go-flash").classList.add("on");
-  setTimeout(() => $("go-flash").classList.remove("on"), 120);
-}
-function loop() {
-  const now = trueNow();
-  $("clock").textContent = fmt(now);
-  // iOS는 첫 터치 전까지 소리를 잠가둔다 — 잠겨 있으면 안내 표시
-  $("audio-hint").hidden = !(S.soundOn && audioState() !== "running");
-  if (!target || msUntil(now, target) < -1000) pickTarget(); // 지나갔으면 다음 목표
-  const { phase, msLeft } = signalPhase(now, target, S.leadMs);
-  $("count").textContent = msLeft > 0 ? Math.ceil(msLeft / 1000) : "0";
-  // 게이지: 마지막 3초 동안 0→100%
-  const g = Math.max(0, Math.min(1, (3000 - Math.max(0, msLeft)) / 3000));
-  document.querySelector(".gauge-fill").style.width = `${g * 100}%`;
-
-  if (phase !== lastPhase) {
-    if (phase === "go") flash(); // 시각 신호는 즉시. 소리는 아래에서 예약제로.
-    lastPhase = phase;
-  }
-
-  // 리허설: 정각이 되면 모의 폼을 한 번만 열기
-  if (rehearsalTarget !== null && now >= rehearsalTarget) {
-    rehearsalOpenAt = rehearsalTarget;
-    rehearsalTarget = null;
-    openRehearsal();
-  }
-
-  // 소리는 발생 시점에 쏘지 않고, 800ms 전에 오디오 정밀 시계에 예약한다.
-  // (아이폰 등에서 출력 지연으로 소리가 밀리는 문제를 기기 지연 보정으로 해결)
-  // 백그라운드 모드 중에는 자체 카운트 소리가 있으므로 일반 틱음은 쉰다.
-  if (S.soundOn && !bgMode) {
-    for (const c of cueTimes(target, S.leadMs)) {
-      const dms = c.at - now;
-      if (dms > 0 && dms <= 800 && !scheduledCues.has(c.at)) {
-        const d = Math.max(0, dms - S.soundLatencyMs) / 1000; // 수동 소리 보정만큼 당김
-        const ok = c.kind === "go"
-          ? scheduleBeepIn(d, 1200, 120, 0.25)
-          : scheduleBeepIn(d, 660, 45, 0.15);
-        if (ok) scheduledCues.add(c.at); // 실패(엔진 잠김)면 다음 프레임에 재시도
-      }
+    if (lastWall === null) {
+      netOffset = Date.now() - mono();
+      $("sync-status").textContent = "기기 시계 사용 중 (동기화 실패 — 인터넷 확인 후 새로고침)";
     }
   }
-  requestAnimationFrame(loop);
 }
-
-// ---- 클릭/스페이스 = 제출 흉내, 오차 표시 ----
-function registerHit() {
-  const err = hitError(trueNow(), lastTargetForHit);
-  const el = $("hit-result");
-  const sign = err > 0 ? "늦음" : err < 0 ? "빠름" : "정확";
-  el.textContent = isRealAttempt(err)
-    ? `${err >= 0 ? "+" : ""}${Math.round(err)} ms (${sign})`
-    : `${err >= 0 ? "+" : ""}${Math.round(err)} ms — 목표에서 너무 멀어 기록 제외`;
-  el.className = "hit " + (Math.abs(err) <= 30 ? "good" : err > 0 ? "late" : "early");
-  if (S.mode === "practice") {
-    if (isRealAttempt(err)) {
-      hitCount.recorded += 1;
-      S.errors.push(Math.round(err));
-      if (S.errors.length > 200) S.errors = S.errors.slice(-200);
-      save(window.localStorage, S);
-      renderStats();
-    } else {
-      hitCount.excluded += 1;
-    }
-    $("hit-count").textContent = `기록 ${hitCount.recorded} | 제외 ${hitCount.excluded}`;
-  }
-  return err; // Task 8에서 연습 기록에 사용
-}
-const hitCount = { recorded: 0, excluded: 0 }; // 이번 세션의 기록/제외 횟수 (씹힘 진단용)
-
-function renderStats() {
-  const s = stats(S.errors);
-  if (!s.n) { $("stats").textContent = "연습 기록 없음"; return; }
-  const bars = s.recent.map((e) => `${e >= 0 ? "+" : ""}${Math.round(e)}`).join("  ");
-  const aim = -S.netDelayMs;
-  const gap = Math.round(s.mean - aim);
-  let text =
-    `시도 ${s.n}회 | 평균 ${s.mean.toFixed(0)}ms | 편차 ±${s.stdev.toFixed(0)}ms | 최고 ${s.best}ms\n` +
-    `목표 ${aim}ms | 목표와의 거리 ${gap >= 0 ? "+" : ""}${gap}ms ${Math.abs(gap) <= 10 ? "✅ 도달" : ""}\n` +
-    `최근: ${bars}`;
-  const rec = recommendLead(S.leadMs, s.mean, s.n, -S.netDelayMs);
-  latestRec = rec !== null && rec !== S.leadMs ? rec : null;
-  if (latestRec !== null) {
-    const aimNote = S.netDelayMs > 0 ? ` (네트워크 지연 ${S.netDelayMs}ms 반영)` : "";
-    text += `\n추천 리드타임: ${latestRec}ms (현재 ${S.leadMs}ms)${aimNote}`;
-  }
-  $("apply-lead").hidden = latestRec === null;
-  $("stats").textContent = text;
-}
-let latestRec = null; // renderStats가 계산한 최신 추천값 (적용 버튼용)
 
 // ---- 네트워크 지연 측정 (리센느 서버) ----
 const RESCENE_URL = "https://artist.mnetplus.world/main/stg/rescene-official";
 async function measureNet() {
   const el = $("net-result");
-  el.textContent = "측정 중…";
+  el.textContent = "네트워크 지연 측정 중…";
   const rtts = [];
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     const t0 = performance.now();
     try {
       // no-cors: 응답 내용은 못 읽어도 도착 시점은 잴 수 있다
@@ -188,13 +106,260 @@ async function measureNet() {
   }
   const oneWay = estimateOneWay(rtts);
   if (oneWay === null) {
-    el.textContent = "측정 실패 — 인터넷 연결을 확인하세요";
-    return;
+    el.textContent = "측정 실패 — 인터넷 연결을 확인하세요 (이전 값 유지)";
+    return false;
   }
   S.netDelayMs = oneWay;
-  save(window.localStorage, S);
-  renderStats(); // 추천 리드타임 목표에 즉시 반영
-  el.textContent = `리센느 서버까지 추정 지연 약 ${oneWay}ms → 추천 리드타임 목표(-${oneWay}ms)에 자동 반영됨`;
+  S.netJitterMs = jitterOf(rtts);
+  persist();
+  el.textContent = `리센느 서버까지 편도 약 ${oneWay}ms (출렁임 ±${S.netJitterMs}ms)`;
+  return true;
+}
+
+// ---- 자동 보정: 빠른 연습 5회 → 리드타임 자동 적용 → 확인 3회 ----
+let calib = null; // { phase, targets, idx, errs, hit, plan, adjustErrs, retries, verifyFails }
+const ADJUST_N = 5, VERIFY_N = 3;
+
+function setLead(ms) {
+  S.leadMs = ms;
+  $("lead").value = ms; $("lead-val").textContent = ms;
+  persist();
+}
+
+async function startCalib() {
+  enableAudio();
+  if (rehearsalTarget !== null) cancelRehearsal();
+  $("calib-btn").hidden = true;
+  $("calib-stop").hidden = false;
+  $("calib-result").hidden = true;
+  $("calib-progress").textContent = "준비 중… 네트워크 지연과 시계를 재는 중 (몇 초)";
+  calib = { phase: "prep", retries: 0, verifyFails: 0 };
+  await measureNet();
+  await doSync();
+  if (!calib) return; // 준비 중 중단됨
+  beginBlock("adjust", ADJUST_N);
+}
+
+function beginBlock(phase, n) {
+  Object.assign(calib, { phase, targets: practiceTargets(trueNow(), n), idx: 0, errs: [], hit: false });
+  setTarget(calib.targets[0]);
+  renderCalibProgress();
+}
+
+function renderCalibProgress(note = "") {
+  if (!calib || calib.phase === "prep") return;
+  const label = calib.phase === "adjust" ? "1단계 연습" : "2단계 확인";
+  const total = calib.targets.length;
+  const dots = calib.targets.map((_, i) => (i < calib.errs.length ? "●" : i === calib.idx ? "◉" : "○")).join(" ");
+  $("calib-progress").textContent = `${label} ${Math.min(calib.idx + 1, total)}/${total}  ${dots}${note ? `\n${note}` : ""}`;
+}
+
+function stopCalib(msg) {
+  calib = null;
+  $("calib-btn").hidden = false;
+  $("calib-stop").hidden = true;
+  $("calib-progress").textContent = msg;
+  setTarget(nextMinuteBoundary(trueNow()));
+}
+
+// 보정 중 목표 시각이 지나가면 다음 라운드로
+function advanceCalib() {
+  calib.idx += 1;
+  calib.hit = false;
+  if (calib.idx < calib.targets.length) {
+    setTarget(calib.targets[calib.idx]);
+    renderCalibProgress();
+    return;
+  }
+  if (calib.phase === "adjust") finishAdjust();
+  else finishVerify();
+}
+
+function finishAdjust() {
+  const plan = planAdjust({
+    errors: calib.errs, leadMs: S.leadMs, netDelayMs: S.netDelayMs, clockUncMs, netJitterMs: S.netJitterMs,
+  });
+  if (!plan.ok) {
+    calib.retries += 1;
+    if (calib.retries >= 2) { stopCalib("❌ 유효한 기록이 부족해요. \"삐\"에 맞춰 떼는지 확인하고 다시 시작하세요."); return; }
+    beginBlock("adjust", ADJUST_N);
+    renderCalibProgress("유효 기록이 4개 미만이라 1단계를 다시 해요");
+    return;
+  }
+  calib.plan = plan;
+  calib.adjustErrs = calib.errs;
+  setLead(plan.leadMs);
+  beginBlock("verify", VERIFY_N);
+  renderCalibProgress(`리드타임 ${plan.leadMs}ms 적용 — 이제 확인 3번`);
+}
+
+function finishVerify() {
+  const { plan } = calib;
+  const v = checkVerify({ errors: calib.errs, aimMs: plan.aimMs });
+  if (v.ok) { completeCalib(v); return; }
+  calib.verifyFails += 1;
+  if (calib.verifyFails >= 3) { stopCalib("😵 손 감각이 아직 들쭉날쭉해요. 잠깐 쉬었다가 다시 시작하세요."); return; }
+  if (v.n >= 2) setLead(clampLead(S.leadMs + v.median - plan.aimMs)); // 확인에서 드러난 차이만큼 한 번 더 미세조정
+  beginBlock("verify", VERIFY_N);
+  renderCalibProgress(`목표와 ${Math.round(v.median - plan.aimMs)}ms 차이 → 리드타임 ${S.leadMs}ms로 미세조정, 확인 다시`);
+}
+
+function completeCalib(v) {
+  const { plan } = calib;
+  const all = robustSummary([...calib.adjustErrs.map((e) => e - plan.median), ...calib.errs.map((e) => e - v.median)]);
+  const sigmaTotMs = totalSigma({ sigmaMs: Math.max(plan.sigmaMs, all.sigma), n: all.n, clockUncMs, netJitterMs: S.netJitterMs });
+  const arrivalMs = v.median + S.netDelayMs;
+  const riskPct = earlyRisk({ arrivalMeanMs: arrivalMs, sigmaTotMs }) * 100;
+  S.calib = { at: Date.now(), leadMs: S.leadMs, aimMs: plan.aimMs, marginMs: plan.marginMs, sigmaTotMs, riskPct };
+  S.errors = [...calib.adjustErrs, ...calib.errs];
+  persist();
+  $("calib-result").hidden = false;
+  $("calib-result").textContent =
+    `✅ 준비 완료!\n` +
+    `리드타임 ${S.leadMs}ms  |  손 흔들림 ±${Math.round(plan.sigmaMs)}ms\n` +
+    `서버 도착 목표: 정각 +${plan.marginMs}ms (안전 여유)\n` +
+    `확인 결과 도착 추정: 정각 ${arrivalMs >= 0 ? "+" : ""}${Math.round(arrivalMs)}ms\n` +
+    `정각 전 도착 위험: ${fmtRisk(riskPct)}`;
+  stopCalib("이제 실전까지 이 설정 그대로 두세요. 실전 10분 전에 한 번 더 보정하면 가장 확실해요.");
+  renderCalibLine();
+}
+
+function fmtRisk(pct) { return pct < 0.1 ? "0.1% 미만" : `${pct.toFixed(1)}%`; }
+
+function renderCalibLine() {
+  const el = $("calib-line");
+  if (!S.calib) {
+    el.textContent = "⚡ 아직 보정 전 — 아래 [자동 보정]부터 하세요";
+    el.className = "calib-line warn";
+    return;
+  }
+  const min = Math.floor((Date.now() - S.calib.at) / 60000);
+  const stale = min >= 30;
+  el.textContent = stale
+    ? `⏰ 보정한 지 ${min}분 — 실전 10분 전에 다시 보정하세요`
+    : `✅ 준비 완료 (${min}분 전) · 도착 목표 정각+${S.calib.marginMs}ms · 정각 전 위험 ${fmtRisk(S.calib.riskPct)}`;
+  el.className = `calib-line ${stale ? "warn" : "ok"}`;
+}
+
+// 손으로 조건을 바꾸면 보정 결과는 더 이상 유효하지 않다
+function invalidateCalib() {
+  S.calib = null;
+  S.errors = [];
+  persist();
+  renderCalibLine();
+}
+
+// 가이드 창이 숨겨지면 크롬이 타이머를 1분에 한 번까지 늦춘다(5분 이상 숨김 시) → 실시간 예약이 끊긴다.
+// 그래서 숨겨지는 순간 앞으로 5분치 정각 신호를 오디오 시계에 통째로 예약하고, 다시 보이면 취소한다.
+const hiddenNodes = new Map(); // 신호 시각 → 예약 노드
+function scheduleHiddenCues() {
+  if (!S.soundOn || bgMode || calib) return;
+  const now = trueNow();
+  let t = nextMinuteBoundary(now);
+  for (let i = 0; i < 5; i += 1, t += 60_000) {
+    for (const c of cueTimes(t, S.leadMs)) {
+      const dms = c.at - now - S.soundLatencyMs;
+      if (dms <= 0 || scheduledCues.has(c.at)) continue;
+      const n = c.kind === "go" ? scheduleBeepIn(dms / 1000, 1200, 120, 0.25) : scheduleBeepIn(dms / 1000, 660, 45, 0.15);
+      if (n) { hiddenNodes.set(c.at, n); scheduledCues.add(c.at); }
+    }
+  }
+}
+function cancelHiddenCues() {
+  for (const [at, n] of hiddenNodes) {
+    try { n.stop(0); } catch { /* 이미 재생됨 */ }
+    scheduledCues.delete(at);
+  }
+  hiddenNodes.clear();
+}
+document.addEventListener("visibilitychange", () => (document.hidden ? scheduleHiddenCues() : cancelHiddenCues()));
+
+// ---- 렌더 루프 ----
+function fmt(ms) {
+  const d = new Date(ms);
+  const p = (n, l = 2) => String(n).padStart(l, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+}
+function flash() {
+  $("go-flash").classList.add("on");
+  setTimeout(() => $("go-flash").classList.remove("on"), 120);
+}
+
+// 목표가 지나갔으면 다음 목표로 (보정 중이면 다음 라운드, 아니면 다음 정각)
+function maintainTarget(now) {
+  if (target !== null && msUntil(now, target) >= -1000) return;
+  if (calib && calib.targets && calib.phase !== "prep") advanceCalib();
+  else setTarget(nextMinuteBoundary(now));
+}
+
+// 소리는 발생 시점에 쏘지 않고 미리 오디오 정밀 시계에 예약한다.
+// rAF와 타이머 양쪽에서 부른다 — 가이드 창이 가려져 rAF가 멈춰도(백그라운드 타이머는 1초 간격) 1.5초 창으로 놓치지 않음.
+function scheduleCues() {
+  if (!S.soundOn || bgMode || target === null) return;
+  const now = trueNow();
+  maintainTarget(now);
+  for (const c of cueTimes(target, S.leadMs)) {
+    const dms = c.at - now;
+    if (dms > 0 && dms <= 1500 && !scheduledCues.has(c.at)) {
+      const d = Math.max(0, dms - S.soundLatencyMs) / 1000; // 수동 소리 보정만큼 당김
+      const ok = c.kind === "go" ? scheduleBeepIn(d, 1200, 120, 0.25) : scheduleBeepIn(d, 660, 45, 0.15);
+      if (ok) scheduledCues.add(c.at); // 실패(엔진 잠김)면 다음 호출에 재시도
+    }
+  }
+}
+
+function loop() {
+  const now = trueNow();
+  $("clock").textContent = fmt(now);
+  $("audio-hint").hidden = !(S.soundOn && audioState() !== "running");
+  maintainTarget(now);
+  const { phase, msLeft } = signalPhase(now, target, S.leadMs);
+  $("count").textContent = msLeft > 0 ? Math.ceil(msLeft / 1000) : "0";
+  $("count-label").textContent = calib && calib.phase !== "prep" ? "연습 라운드" : "다음 정각까지";
+  const g = Math.max(0, Math.min(1, (3000 - Math.max(0, msLeft)) / 3000)); // 마지막 3초 동안 0→100%
+  document.querySelector(".gauge-fill").style.width = `${g * 100}%`;
+  if (phase !== lastPhase) {
+    if (phase === "go") flash();
+    lastPhase = phase;
+  }
+  // 리허설: 정각이 되면 모의 폼을 한 번만 열기
+  if (rehearsalTarget !== null && now >= rehearsalTarget) {
+    rehearsalOpenAt = rehearsalTarget;
+    rehearsalTarget = null;
+    openRehearsal();
+  }
+  scheduleCues();
+  requestAnimationFrame(loop);
+}
+
+// ---- 누르기/떼기 = 제출 흉내, 오차 표시 ----
+function registerHit(e) {
+  if (target === null) return;
+  const err = hitError(eventNow(e), target);
+  const arrival = err + S.netDelayMs;
+  const sign = (x) => `${x >= 0 ? "+" : ""}${Math.round(x)}`;
+  const el = $("hit-result");
+  if (!isRealAttempt(err)) {
+    el.textContent = `${sign(err)} ms — 목표에서 너무 멀어요`;
+    el.className = "hit";
+    $("hit-detail").textContent = "카운트다운의 \"삐\"에 맞춰 떼세요";
+    return;
+  }
+  const margin = S.calib?.marginMs ?? calib?.plan?.marginMs ?? 40;
+  if (arrival < 0) {
+    el.textContent = `⚠️ ${sign(err)} ms — 정각 전 도착 (최후순위 위험!)`;
+    el.className = "hit late";
+  } else {
+    el.textContent = `${sign(err)} ms`;
+    el.className = `hit ${arrival <= margin * 2 ? "good" : "early"}`;
+  }
+  $("hit-detail").textContent = `떼는 순간 기준 ${sign(err)}ms → 서버 도착 추정 정각 ${sign(arrival)}ms`;
+
+  if (calib && calib.targets && !calib.hit && calib.phase !== "prep") {
+    calib.hit = true; // 라운드당 첫 시도만 기록 (중복 입력 방지)
+    calib.errs.push(Math.round(err));
+    renderCalibProgress();
+  }
 }
 
 // ---- 이벤트 ----
@@ -203,34 +368,58 @@ window.addEventListener("pointerdown", enableAudio);
 window.addEventListener("keydown", enableAudio);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) enableAudio(); });
 
-// 측정 시점: 기본은 누르는 순간(pointerdown/keydown). "뗄 때 측정"이 켜져 있으면
-// 떼는 순간(pointerup/keyup)에 기록 — 실전 제출 동작(홀드-릴리즈)과 같은 동작으로 보정하기 위함.
+const isTyping = (t) => t.matches?.("input[type=text], input[type=tel], input[type=number], textarea");
+// 측정 시점: 기본은 떼는 순간(pointerup/keyup) — 웹 버튼은 뗄 때 실행되므로 실전과 같은 동작.
 window.addEventListener("keydown", (e) => {
-  if (e.code !== "Space") return;
-  // 리허설 폼 등 글자 입력 중에는 스페이스가 "띄어쓰기"여야 한다 — 측정 가로채기 금지
-  if (e.target.matches?.("input[type=text], input[type=tel], input[type=number], textarea")) return;
+  if (e.code !== "Space" || isTyping(e.target)) return;
   e.preventDefault();
   // 버튼/슬라이더에 포커스가 남아 있으면 스페이스가 그 컨트롤을 다시 작동시킬 수 있어 차단
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-  if (!S.releaseMode) registerHit();
+  if (!S.releaseMode && !e.repeat) registerHit(e);
 });
 window.addEventListener("keyup", (e) => {
-  if (e.code !== "Space") return;
-  if (e.target.matches?.("input[type=text], input[type=tel], input[type=number], textarea")) return;
+  if (e.code !== "Space" || isTyping(e.target)) return;
   e.preventDefault();
-  if (S.releaseMode) registerHit();
+  if (S.releaseMode) registerHit(e);
 });
-document.querySelector(".stage").addEventListener("pointerdown", () => { if (!S.releaseMode) registerHit(); });
-document.querySelector(".stage").addEventListener("pointerup", () => { if (S.releaseMode) registerHit(); });
-// 버튼은 click(눌렀다 뗌)이 아니라 press/release 순간에 직접 기록 — 타이밍 오차 최소화.
-// preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
-$("hit-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); if (!S.releaseMode) registerHit(); });
-$("hit-btn").addEventListener("pointerup", (e) => { e.preventDefault(); if (S.releaseMode) registerHit(); });
-$("release-mode").addEventListener("change", (e) => {
-  S.releaseMode = e.target.checked;
-  resetErrors(); // 측정 방식이 바뀌면 이전 기록은 다른 조건 — 새로 측정
-});
+for (const el of [document.querySelector(".stage"), $("hit-btn")]) {
+  // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
+  el.addEventListener("pointerdown", (e) => { e.preventDefault(); if (!S.releaseMode) registerHit(e); });
+  el.addEventListener("pointerup", (e) => { e.preventDefault(); if (S.releaseMode) registerHit(e); });
+}
+
+$("calib-btn").addEventListener("click", startCalib);
+$("calib-stop").addEventListener("click", () => stopCalib("중단했어요. 리드타임은 마지막 적용값 그대로예요."));
 $("measure-net").addEventListener("click", measureNet);
+$("reset-calib").addEventListener("click", invalidateCalib);
+$("release-mode").addEventListener("change", (e) => { S.releaseMode = e.target.checked; invalidateCalib(); });
+$("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; invalidateCalib(); });
+$("sound-lat").addEventListener("input", (e) => { S.soundLatencyMs = Number(e.target.value); $("sound-lat-val").textContent = S.soundLatencyMs; invalidateCalib(); });
+$("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); persist(); });
+$("sound").addEventListener("change", (e) => { S.soundOn = e.target.checked; persist(); });
+$("sound-test").addEventListener("click", () => {
+  enableAudio();
+  beep(880, 300, 0.3);
+  setTimeout(() => {
+    const lat = reportedLatency();
+    const latTxt = lat === null ? "기기 미제공" : `${Math.round(lat * 1000)}ms(자동 보정됨)`;
+    $("net-result").textContent = `[진단] 소리엔진: ${audioState()} / 출력지연: ${latTxt}`;
+  }, 100);
+});
+
+// ---- 공지 항목 붙여넣기 ----
+function renderNotice() {
+  const n = S.noticeFields.length;
+  $("notice-status").textContent = n
+    ? `항목 ${n}개 저장됨: ${S.noticeFields.join(" · ")}`
+    : "비어 있으면 리허설은 기본 항목 + 랜덤 서프라이즈로 나와요";
+}
+$("notice-fields").addEventListener("input", (e) => {
+  S.noticeFields = parseFields(e.target.value);
+  persist();
+  renderNotice();
+});
+
 // ---- 백그라운드 소리 모드: 5분치 정각 안내를 통째로 예약 ----
 let bgMode = false;
 const bgNodes = [];
@@ -251,8 +440,7 @@ function startBgMode() {
   startKeepalive();
   bgMode = true;
   $("bg-toggle").textContent = "⏹ 백그라운드 소리 모드 끄기";
-  $("bg-status").textContent =
-    "켜짐 — 다른 앱으로 가도 5분간 매 정각 안내가 울립니다 (30초 전 예고 → 10초 전 뚜뚜 → 5·4·3·2·1 → 삐)";
+  $("bg-status").textContent = "켜짐 — 5분간 매 정각 안내 (30초 전 예고 → 10초 전 뚜뚜 → 5·4·3·2·1 → 삐)";
 }
 function stopBgMode() {
   for (const n of bgNodes) { try { n.stop(0); } catch { /* 이미 종료 */ } }
@@ -278,16 +466,21 @@ let rehearsalTarget = null; // 열릴 정각(ms). null이면 비활성
 let rehearsalOpenAt = null; // 실제로 열린 시각(ms) — 소요시간 측정 기준
 let rehearsalBest = null;
 function armRehearsal() {
+  if (calib) { $("rehearsal-status").textContent = "자동 보정이 끝난 뒤에 해주세요"; return; }
   rehearsalTarget = nextMinuteBoundary(trueNow());
   $("rehearsal-form").hidden = true;
   $("rehearsal-result").textContent = "";
   $("rehearsal-status").textContent = "대기 중 — 정각이 되면 폼이 열립니다. 카운트다운을 보세요!";
 }
+function cancelRehearsal() {
+  rehearsalTarget = null;
+  $("rehearsal-status").textContent = "";
+}
 function openRehearsal() {
-  const fields = buildFields(Math.random());
+  const fields = buildFields(Math.random(), S.noticeFields);
   const form = $("rehearsal-form");
   form.innerHTML = fields
-    .map((f, i) => `<label>${f}<input type="text" data-idx="${i}" autocomplete="off" /></label>`)
+    .map((f, i) => `<label>${escapeHtml(f)}<input type="text" data-idx="${i}" autocomplete="off" /></label>`)
     .join("") + `<button id="rehearsal-submit" type="button">제출</button>`;
   form.hidden = false;
   $("rehearsal-status").textContent = `폼 열림! (항목 ${fields.length}개 — 끝까지 확인했나요?)`;
@@ -304,43 +497,22 @@ function openRehearsal() {
     $("rehearsal-status").textContent = "";
   });
 }
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 $("rehearsal-btn").addEventListener("click", armRehearsal);
 
-$("apply-lead").addEventListener("click", () => {
-  if (latestRec === null) return;
-  S.leadMs = latestRec;
-  $("lead").value = S.leadMs; $("lead-val").textContent = S.leadMs;
-  resetErrors(); // 새 리드타임 기준으로 다시 측정 시작
-});
-$("sound-test").addEventListener("click", () => {
-  enableAudio();
-  beep(880, 300, 0.3);
-  const sess = navigator.audioSession ? "지원" : "미지원";
-  setTimeout(() => {
-    const lat = reportedLatency();
-    const latTxt = lat === null ? "기기 미제공(수동 보정 필요)" : `${Math.round(lat * 1000)}ms(자동 보정됨)`;
-    $("net-result").textContent = `[진단 v1.5] 소리엔진: ${audioState()} / iOS세션: ${sess} / 출력지연: ${latTxt}`;
-  }, 100);
-});
-
-function resetErrors() { S.errors = []; save(window.localStorage, S); renderStats(); }
-// 리드타임이 바뀌면 이전 조건의 기록은 무효 — 자동 초기화해서 평균 오염을 막는다
-$("lead").addEventListener("input", (e) => { S.leadMs = Number(e.target.value); $("lead-val").textContent = S.leadMs; resetErrors(); });
-$("reset-stats").addEventListener("click", resetErrors);
-$("sound-lat").addEventListener("input", (e) => { S.soundLatencyMs = Number(e.target.value); $("sound-lat-val").textContent = S.soundLatencyMs; save(window.localStorage, S); });
-$("offset").addEventListener("change", (e) => { S.manualOffsetMs = Number(e.target.value); save(window.localStorage, S); });
-$("sound").addEventListener("change", (e) => { S.soundOn = e.target.checked; save(window.localStorage, S); });
-function applyMode() {
-  const practice = S.mode === "practice";
-  $("start-practice").hidden = !practice;
-  renderStats();
-}
-$("mode").addEventListener("change", (e) => { S.mode = e.target.value; save(window.localStorage, S); applyMode(); });
-$("start-practice").addEventListener("click", () => { pickTarget(); });
+// 테스트용: 주소 뒤에 ?debug 를 붙였을 때만 내부 상태를 노출 (자동 시뮬레이션 검증용)
+if (location.search.includes("debug")) window.__dbg = { target: () => target, lead: () => S.leadMs, now: trueNow };
 
 // ---- 시작 ----
-pickTarget();
+netOffset = Date.now() - mono(); // 동기화 전까지는 기기 시계
+setTarget(nextMinuteBoundary(trueNow()));
 doSync();
-applyMode();
+renderNotice();
+renderChecklist();
+renderCalibLine();
 requestAnimationFrame(loop);
-setInterval(doSync, 5 * 60 * 1000); // 5분마다 재동기화
+setInterval(scheduleCues, 200);            // 창이 가려져도 소리 예약이 이어지도록
+setInterval(renderCalibLine, 30 * 1000);   // "N분 전" 갱신
+setInterval(doSync, 5 * 60 * 1000);        // 5분마다 재동기화

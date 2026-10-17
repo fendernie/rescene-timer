@@ -23,3 +23,13 @@ test("elapsedSec: rounds to 0.1s", () => {
   assert.equal(elapsedSec(1000, 13340), 12.3);
   assert.equal(elapsedSec(0, 50), 0.1);
 });
+
+import { parseFields } from "../js/rehearsal.js";
+
+test("parseFields: one per line, trims, drops blanks and leading bullets/numbers", () => {
+  assert.deepEqual(parseFields("1. 이름\n\n - 생년월일 \n•  최애 멤버\n"), ["이름", "생년월일", "최애 멤버"]);
+});
+
+test("buildFields: custom notice fields used verbatim when given", () => {
+  assert.deepEqual(buildFields(0.99, ["이름", "응원 문구"]), ["이름", "응원 문구"]);
+});

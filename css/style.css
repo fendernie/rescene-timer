@@ -36,3 +36,20 @@ body {
   pointer-events: none; transition: opacity 90ms linear;
 }
 #go-flash.on { opacity: 0.85; transition: none; }
+/* v2 */
+details.panel { margin-top: 14px; }
+details.panel > summary { cursor: pointer; font-weight: 700; font-size: 17px; list-style-position: inside; }
+.left { text-align: left; }
+.small { font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row > button { flex: 1; }
+button { padding: 10px 12px; font-size: 15px; border-radius: 10px; border: 1px solid #444; background: #262626; color: #eee; cursor: pointer; }
+button.primary { background: #35c46a; color: #111; border: 0; font-weight: 800; font-size: 18px; padding: 14px; }
+.calib-line { font-size: 15px; padding: 8px 10px; border-radius: 10px; margin: 8px 0 0; }
+.calib-line.ok { background: #14351f; color: #8ff0b0; }
+.calib-line.warn { background: #3a2a00; color: #ffd93d; }
+.calib-progress { white-space: pre-wrap; font-size: 18px; font-variant-numeric: tabular-nums; margin: 4px 0; }
+.notice-box textarea {
+  display: block; width: 100%; margin-top: 6px; padding: 10px; font-size: 15px; border-radius: 8px;
+  border: 1px solid #444; background: #111; color: #eee; -webkit-user-select: text; user-select: text;
+}

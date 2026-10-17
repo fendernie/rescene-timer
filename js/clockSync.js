@@ -53,3 +53,23 @@ export function isSaneShift(prevOffsetMs, nextOffsetMs, isFirstSync) {
   if (isFirstSync) return true;
   return Math.abs(nextOffsetMs - prevOffsetMs) <= 1000;
 }
+
+// 단조시계(컴퓨터 시각 조정·NTP 보정에 흔들리지 않는 시계)를 epoch ms로.
+export function mono() {
+  return performance.timeOrigin + performance.now();
+}
+
+// 단조시계 기준 오프셋 → 벽시계(Date.now) 기준 오프셋. 노트북 잠자기 동안 단조시계가 멈춰도
+// 이 값은 그대로라서, 재동기화 점프 검사(isSaneShift)를 이 값으로 하면 잠자기를 오염으로 오인하지 않는다.
+export function wallOffset(monoOffsetMs, dateNowMs, monoNowMs) {
+  return monoOffsetMs - (dateNowMs - monoNowMs);
+}
+
+// 왕복시간들의 출렁임(편도 기준 표준편차). 첫 요청은 연결 준비 비용이 섞여 제외. 0~50ms로 제한.
+export function jitterOf(rttsMs) {
+  const xs = rttsMs.slice(1).map((r) => r / 2);
+  if (xs.length < 2) return 0;
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
+  return Math.min(50, Math.round(sd));
+}

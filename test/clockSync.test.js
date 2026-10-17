@@ -82,3 +82,12 @@ test("isSaneShift: rejects shifts over 1000ms after first sync", () => {
   assert.equal(isSaneShift(50, 1200, false), false);  // 1.15s 점프 → 오염 의심
   assert.equal(isSaneShift(-20, -900, false), true);  // 880ms는 허용 경계 안
 });
+
+import { wallOffset } from "../js/clockSync.js";
+
+test("wallOffset: removes the monotonic-vs-wall gap so laptop sleep doesn't look like a jump", () => {
+  // 단조시계가 잠자기로 10초 뒤처지면 오프셋도 10초 커지지만, 벽시계 기준 오프셋은 그대로
+  const before = wallOffset(50, 1_000_000, 1_000_000);
+  const after = wallOffset(10_050, 2_010_000, 2_000_000);
+  assert.equal(before, after);
+});
