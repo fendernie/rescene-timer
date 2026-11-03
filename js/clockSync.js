@@ -73,3 +73,9 @@ export function jitterOf(rttsMs) {
   const sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
   return Math.min(50, Math.round(sd));
 }
+
+// time.akamai.com/?iso&ms 응답("2026-11-03T14:03:31.641Z") → epoch ms. 형식이 다르면 NaN.
+export function parseAkamai(text) {
+  const t = text.trim();
+  return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(t) ? Date.parse(t) : NaN;
+}

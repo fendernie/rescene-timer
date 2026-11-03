@@ -91,3 +91,14 @@ test("wallOffset: removes the monotonic-vs-wall gap so laptop sleep doesn't look
   const after = wallOffset(10_050, 2_010_000, 2_000_000);
   assert.equal(before, after);
 });
+
+import { parseAkamai } from "../js/clockSync.js";
+
+test("parseAkamai: ms-precision ISO time -> epoch ms", () => {
+  assert.equal(parseAkamai("2026-11-03T14:03:31.641Z\n"), Date.UTC(2026, 10, 3, 14, 3, 31, 641));
+});
+
+test("parseAkamai: rejects anything without milliseconds (1초 해상도 소스는 0~1초 늦게 맞춰짐)", () => {
+  assert.ok(Number.isNaN(parseAkamai("2026-11-03T14:03:31Z")));
+  assert.ok(Number.isNaN(parseAkamai("<html>error</html>")));
+});

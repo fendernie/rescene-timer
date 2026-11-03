@@ -1,14 +1,14 @@
 // 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
 // (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
-import { syncOffset, estimateOneWay, isSaneShift, mono, wallOffset, jitterOf } from "./clockSync.js?v=20";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=20";
-import { hitError, isRealAttempt } from "./hitMeter.js?v=20";
-import { load, save } from "./settings.js?v=20";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=20";
-import { buildFields, elapsedSec, parseFields } from "./rehearsal.js?v=20";
+import { syncOffset, estimateOneWay, isSaneShift, mono, wallOffset, jitterOf, parseAkamai } from "./clockSync.js?v=21";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=21";
+import { hitError, isRealAttempt } from "./hitMeter.js?v=21";
+import { load, save } from "./settings.js?v=21";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=21";
+import { buildFields, elapsedSec, parseFields } from "./rehearsal.js?v=21";
 import {
   planAdjust, checkVerify, practiceTargets, robustSummary, totalSigma, earlyRisk, clampLead,
-} from "./calibration.js?v=20";
+} from "./calibration.js?v=21";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -56,13 +56,13 @@ function setTarget(t) {
 }
 
 // ---- 시각 소스 동기화 (best-effort) ----
+// 시각 소스: Akamai (ms 단위, CORS 허용).
+// ⚠️ 예전에 쓰던 Cloudflare trace의 ts는 2026-11 기준 초 단위로 잘려 나와 시계가 0~1초 늦게 맞춰졌다 — 쓰지 말 것.
 async function fetchSample() {
   const sentAt = mono();
-  const res = await fetch("https://www.cloudflare.com/cdn-cgi/trace", { cache: "no-store" });
+  const res = await fetch("https://time.akamai.com/?iso&ms", { cache: "no-store" });
   const recvAt = mono();
-  const text = await res.text();
-  const m = text.match(/ts=([0-9.]+)/);
-  const serverMs = m ? Math.round(parseFloat(m[1]) * 1000) : Date.parse(res.headers.get("date"));
+  const serverMs = parseAkamai(await res.text());
   if (!Number.isFinite(serverMs)) throw new Error("bad time sample");
   return { serverMs, sentAt, recvAt };
 }
@@ -79,7 +79,9 @@ async function doSync() {
     netOffset = r.offsetMs;
     lastWall = wall;
     clockUncMs = Math.round(r.rttMs / 2);
-    $("sync-status").textContent = `시계 동기화됨 (추정오차 ±${clockUncMs}ms)`;
+    const devDiff = Math.round(-wall); // + 면 기기 시계가 빠름
+    $("sync-status").textContent =
+      `시계 동기화됨 (추정오차 ±${clockUncMs}ms · 이 기기 시계는 표준시보다 ${devDiff >= 0 ? "+" : ""}${devDiff}ms)`;
   } catch {
     if (lastWall === null) {
       netOffset = Date.now() - mono();
@@ -151,7 +153,8 @@ function renderCalibProgress(note = "") {
   const label = calib.phase === "adjust" ? "1단계 연습" : "2단계 확인";
   const total = calib.targets.length;
   const dots = calib.targets.map((_, i) => (i < calib.errs.length ? "●" : i === calib.idx ? "◉" : "○")).join(" ");
-  $("calib-progress").textContent = `${label} ${Math.min(calib.idx + 1, total)}/${total}  ${dots}${note ? `\n${note}` : ""}`;
+  $("calib-progress").textContent =
+    `${label} ${Math.min(calib.idx + 1, total)}/${total}  ${dots}\n(화면 빈 곳 어디든 꾹 눌렀다가 "삐"에 떼기)${note ? `\n${note}` : ""}`;
 }
 
 function stopCalib(msg) {
@@ -181,7 +184,10 @@ function finishAdjust() {
   });
   if (!plan.ok) {
     calib.retries += 1;
-    if (calib.retries >= 2) { stopCalib("❌ 유효한 기록이 부족해요. \"삐\"에 맞춰 떼는지 확인하고 다시 시작하세요."); return; }
+    if (calib.retries >= 2) {
+      stopCalib(`❌ 유효한 기록이 부족해요 (최근 기록: ${calib.errs.join(", ") || "없음"}). 이 문구를 캡처해서 알려주세요.`);
+      return;
+    }
     beginBlock("adjust", ADJUST_N);
     renderCalibProgress("유효 기록이 4개 미만이라 1단계를 다시 해요");
     return;
@@ -382,11 +388,18 @@ window.addEventListener("keyup", (e) => {
   e.preventDefault();
   if (S.releaseMode) registerHit(e);
 });
-for (const el of [document.querySelector(".stage"), $("hit-btn")]) {
-  // preventDefault로 포커스를 막아 스페이스바가 버튼을 재작동시키는 중복 기록도 방지.
-  el.addEventListener("pointerdown", (e) => { e.preventDefault(); if (!S.releaseMode) registerHit(e); });
-  el.addEventListener("pointerup", (e) => { e.preventDefault(); if (S.releaseMode) registerHit(e); });
-}
+// 화면 어디서 누르고 떼도 기록 (🎯 버튼만 노리다 위치를 놓쳐 기록이 빠지는 일 방지).
+// 단, 다른 버튼·입력칸·접기 제목을 누른 건 조작이지 타이밍 시도가 아니므로 제외.
+const isControl = (t) => t !== $("hit-btn") && !!t.closest?.("button, input, textarea, select, summary, label, a");
+window.addEventListener("pointerdown", (e) => {
+  if (isControl(e.target)) return;
+  if (e.target === $("hit-btn")) e.preventDefault(); // 포커스를 막아 스페이스바 재작동 중복 기록 방지
+  if (!S.releaseMode) registerHit(e);
+});
+window.addEventListener("pointerup", (e) => {
+  if (isControl(e.target)) return;
+  if (S.releaseMode) registerHit(e);
+});
 
 $("calib-btn").addEventListener("click", startCalib);
 $("calib-stop").addEventListener("click", () => stopCalib("중단했어요. 리드타임은 마지막 적용값 그대로예요."));
