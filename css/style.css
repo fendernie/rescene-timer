@@ -53,3 +53,4 @@ button.primary { background: #35c46a; color: #111; border: 0; font-weight: 800; 
   display: block; width: 100%; margin-top: 6px; padding: 10px; font-size: 15px; border-radius: 8px;
   border: 1px solid #444; background: #111; color: #eee; -webkit-user-select: text; user-select: text;
 }
+.sync-warn { color: #ff6b6b !important; font-weight: 700; background: #4a1515; padding: 8px; border-radius: 8px; }

@@ -20,26 +20,27 @@ test("robustSummary: sigma floored at 10ms (5 samples underestimate spread)", ()
   assert.equal(robustSummary([5, 5, 5, 5, 5]).sigma, 10);
 });
 
-test("safetyMargin: grows with hand spread, clamped to [30,200]", () => {
-  assert.equal(safetyMargin({ sigmaMs: 10, n: 5 }), 30);
+test("safetyMargin: 3x total spread, clamped to [35,220]", () => {
+  assert.equal(safetyMargin({ sigmaMs: 10, n: 5 }), 35);
   const m = safetyMargin({ sigmaMs: 25, n: 5, clockUncMs: 10, netJitterMs: 5 });
-  assert.ok(m > 60 && m < 80, `margin ${m}`);
-  assert.equal(safetyMargin({ sigmaMs: 500, n: 5 }), 200);
+  assert.ok(m > 75 && m < 95, `margin ${m}`);
+  assert.equal(safetyMargin({ sigmaMs: 500, n: 5 }), 220);
 });
 
-test("earlyRisk: arrival centred on 00 -> 50%, +2.5 sigma -> under 1%", () => {
+test("earlyRisk: arrival centred on 00 -> 50%, +2.5 sigma -> under 1%, +3 sigma -> ~0.1%", () => {
+  assert.ok(earlyRisk({ arrivalMeanMs: 75, sigmaTotMs: 25 }) < 0.002);
   assert.equal(Math.round(earlyRisk({ arrivalMeanMs: 0, sigmaTotMs: 25 }) * 100), 50);
   assert.ok(earlyRisk({ arrivalMeanMs: 62.5, sigmaTotMs: 25 }) < 0.01);
   assert.ok(earlyRisk({ arrivalMeanMs: -50, sigmaTotMs: 25 }) > 0.95);
 });
 
 test("planAdjust: moves lead so median click lands on margin minus network delay", () => {
-  // 클릭 중앙값 -30ms, 지연 40ms → 도착 +10ms. 여유 30ms 목표면 클릭 목표 = 30-40 = -10 → 20ms 늦게
+  // 클릭 중앙값 -30ms, 지연 40ms → 도착 +10ms. 여유 35ms 목표면 클릭 목표 = 35-40 = -5 → 25ms 늦게
   const p = planAdjust({ errors: [-35, -30, -30, -25, -30], leadMs: 100, netDelayMs: 40 });
   assert.equal(p.ok, true);
-  assert.equal(p.marginMs, 30);
-  assert.equal(p.aimMs, -10);
-  assert.equal(p.leadMs, 80); // 신호를 20ms 늦게 → 클릭도 20ms 늦어짐
+  assert.equal(p.marginMs, 35);
+  assert.equal(p.aimMs, -5);
+  assert.equal(p.leadMs, 75); // 신호를 25ms 늦게 → 클릭도 25ms 늦어짐
 });
 
 test("planAdjust: not ok with fewer than 4 usable tries", () => {
@@ -51,9 +52,11 @@ test("planAdjust: lead clamped to [-300,600] and rounded to 5", () => {
   assert.equal(p.leadMs, -300);
 });
 
-test("checkVerify: passes when median within 15ms of aim", () => {
-  assert.equal(checkVerify({ errors: [5, 12, -3], aimMs: 0 }).ok, true);
-  assert.equal(checkVerify({ errors: [30, 25, 40], aimMs: 0 }).ok, false);
+test("checkVerify: asymmetric — early side only 5ms, late side 20ms", () => {
+  assert.equal(checkVerify({ errors: [5, 12, -3], aimMs: 0 }).ok, true);   // +5 늦음 OK
+  assert.equal(checkVerify({ errors: [18, 15, 20], aimMs: 0 }).ok, true);  // +18 늦음 OK
+  assert.equal(checkVerify({ errors: [30, 25, 40], aimMs: 0 }).ok, false); // +30 너무 늦음
+  assert.equal(checkVerify({ errors: [-9, -8, -10], aimMs: 0 }).ok, false); // -9 이름 → 불합격 (위험 구간)
   assert.equal(checkVerify({ errors: [0], aimMs: 0 }).ok, false); // 표본 부족
 });
 

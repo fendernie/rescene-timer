@@ -102,3 +102,16 @@ test("parseAkamai: rejects anything without milliseconds (1초 해상도 소스�
   assert.ok(Number.isNaN(parseAkamai("2026-11-03T14:03:31Z")));
   assert.ok(Number.isNaN(parseAkamai("<html>error</html>")));
 });
+
+import { clockWarning } from "../js/clockSync.js";
+
+test("clockWarning: flags device-vs-standard gaps over 200ms (today's 0~1s error would have shown)", () => {
+  assert.equal(clockWarning(3), false);
+  assert.equal(clockWarning(-150), false);
+  assert.equal(clockWarning(-520), true);
+});
+
+test("isSaneShift: custom limit", () => {
+  assert.equal(isSaneShift(0, 300, false, 250), false);
+  assert.equal(isSaneShift(0, 200, false, 250), true);
+});

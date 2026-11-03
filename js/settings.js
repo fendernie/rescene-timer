@@ -2,7 +2,7 @@
 const KEY = "rescene-timer";
 
 export const DEFAULTS = {
-  version: 2,
+  version: 3,
   leadMs: 200,
   manualOffsetMs: 0,
   soundOn: true,
@@ -29,12 +29,19 @@ export function load(storage) {
 // v1 → v2: "뗄 때 측정"을 기본으로, 옛 기준(정각 도착 목표)의 연습 기록은 폐기. 리드타임은 출발점으로 유지.
 function migrate(s, storedVersion) {
   if (storedVersion < 2) {
-    s.version = 2;
     s.releaseMode = true;
     s.errors = [];
     delete s.mode;
     delete s.targetMode;
   }
+  // v2 → v3: v2의 보정은 틀린 시계(0~1초 늦음)와 과대추정된 네트워크 지연(~52ms, 실제 ~10ms) 기준이라 폐기.
+  if (storedVersion < 3) {
+    s.calib = null;
+    s.errors = [];
+    s.netDelayMs = 0;
+    s.netJitterMs = 0;
+  }
+  s.version = 3;
   return s;
 }
 

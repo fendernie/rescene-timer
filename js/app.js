@@ -1,14 +1,14 @@
 // 주의: 배포 시 index.html의 스크립트 태그와 아래 import들의 ?v= 숫자를 함께 올릴 것.
 // (버전 도장이 같아야 브라우저가 옛/새 파일을 섞어 로드하는 사고가 없다)
-import { syncOffset, estimateOneWay, isSaneShift, mono, wallOffset, jitterOf, parseAkamai } from "./clockSync.js?v=21";
-import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=21";
-import { hitError, isRealAttempt } from "./hitMeter.js?v=21";
-import { load, save } from "./settings.js?v=21";
-import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive } from "./beeper.js?v=21";
-import { buildFields, elapsedSec, parseFields } from "./rehearsal.js?v=21";
+import { syncOffset, estimateOneWay, isSaneShift, mono, wallOffset, jitterOf, parseAkamai, clockWarning } from "./clockSync.js?v=25";
+import { nextMinuteBoundary, msUntil, signalPhase, cueTimes, bgCueTimes } from "./countdown.js?v=25";
+import { hitError, isRealAttempt } from "./hitMeter.js?v=25";
+import { load, save } from "./settings.js?v=25";
+import { enableAudio, beep, scheduleBeepIn, audioState, reportedLatency, startKeepalive, stopKeepalive, trackAudioClock } from "./beeper.js?v=25";
+import { buildFields, elapsedSec, parseFields } from "./rehearsal.js?v=25";
 import {
   planAdjust, checkVerify, practiceTargets, robustSummary, totalSigma, earlyRisk, clampLead,
-} from "./calibration.js?v=21";
+} from "./calibration.js?v=25";
 
 const $ = (id) => document.getElementById(id);
 const S = load(window.localStorage);
@@ -70,9 +70,12 @@ async function doSync() {
   try {
     const r = await syncOffset(fetchSample, 8);
     if (!r.ok) throw new Error("no ok");
-    // 1초 넘는 점프는 오염된 측정 — 기존 시계 유지. 단, 벽시계 기준으로 비교해 노트북 잠자기는 정상 처리.
     const wall = wallOffset(r.offsetMs, Date.now(), mono());
-    if (!isSaneShift(lastWall ?? 0, wall, lastWall === null)) {
+    // 정확한 소스면 재동기화 변화는 수 ms. 단조시계 기준(맥이 시계를 고친 경우) 또는 벽시계 기준(잠자기) 중
+    // 하나라도 250ms 안이면 정상으로 본다.
+    const first = lastWall === null;
+    const sane = first || isSaneShift(netOffset, r.offsetMs, false, 250) || isSaneShift(lastWall, wall, false, 250);
+    if (!sane) {
       $("sync-status").textContent = "시계 동기화됨 (직전 재동기화 이상값 무시함)";
       return;
     }
@@ -80,18 +83,26 @@ async function doSync() {
     lastWall = wall;
     clockUncMs = Math.round(r.rttMs / 2);
     const devDiff = Math.round(-wall); // + 면 기기 시계가 빠름
-    $("sync-status").textContent =
-      `시계 동기화됨 (추정오차 ±${clockUncMs}ms · 이 기기 시계는 표준시보다 ${devDiff >= 0 ? "+" : ""}${devDiff}ms)`;
+    const warn = clockWarning(devDiff);
+    $("sync-status").textContent = warn
+      ? `⚠️ 이 기기 시계가 표준시와 ${devDiff >= 0 ? "+" : ""}${devDiff}ms 차이 — 가이드 시계(표준시)를 따르세요. 이상하면 캡처해서 알려주세요`
+      : `시계 동기화됨 (추정오차 ±${clockUncMs}ms · 이 기기 시계는 표준시보다 ${devDiff >= 0 ? "+" : ""}${devDiff}ms)`;
+    $("sync-status").className = warn ? "muted sync-warn" : "muted";
   } catch {
     if (lastWall === null) {
       netOffset = Date.now() - mono();
-      $("sync-status").textContent = "기기 시계 사용 중 (동기화 실패 — 인터넷 확인 후 새로고침)";
+      // 맥은 보통 NTP로 정확(실측 ±5ms)하지만 확인이 안 된 상태라 눈에 띄게 경고
+      $("sync-status").textContent = "⚠️ 표준시 동기화 실패 — 기기 시계 사용 중. 인터넷 확인 후 새로고침하세요";
+      $("sync-status").className = "muted sync-warn";
     }
   }
 }
 
 // ---- 네트워크 지연 측정 (리센느 서버) ----
-const RESCENE_URL = "https://artist.mnetplus.world/main/stg/rescene-official";
+// ⚠️ 페이지 주소로 재면 서버가 페이지를 만드는 시간(~100ms)까지 지연으로 잡혀 40ms+ 과대추정 →
+// 너무 일찍 떼게 되어 정각 전 도착 위험. 같은 서버의 33바이트 캐시 파일로 입구까지의 순수 네트워크만 잰다.
+// (실측 2026-11-03: 입구 왕복 ~10ms, 실제 API 왕복 ~21ms → 남는 몇 ms는 "늦게 도착" 쪽이라 안전)
+const RESCENE_URL = "https://artist.mnetplus.world/robots.txt";
 async function measureNet() {
   const el = $("net-result");
   el.textContent = "네트워크 지연 측정 중…";
@@ -216,6 +227,17 @@ function completeCalib(v) {
   const sigmaTotMs = totalSigma({ sigmaMs: Math.max(plan.sigmaMs, all.sigma), n: all.n, clockUncMs, netJitterMs: S.netJitterMs });
   const arrivalMs = v.median + S.netDelayMs;
   const riskPct = earlyRisk({ arrivalMeanMs: arrivalMs, sigmaTotMs }) * 100;
+  // 확인 단계에서 손이 더 흔들렸으면 위험이 1%를 넘을 수 있다 → "준비 완료" 대신 여유를 키워 재확인
+  if (riskPct > 1) {
+    calib.verifyFails += 1;
+    if (calib.verifyFails >= 3) { stopCalib("😵 손 흔들림이 커서 안전 여유가 부족해요. 잠깐 쉬었다가 다시 시작하세요."); return; }
+    const newMargin = Math.min(220, Math.ceil(3 * sigmaTotMs));
+    calib.plan = { ...plan, marginMs: newMargin, aimMs: newMargin - S.netDelayMs, sigmaMs: Math.max(plan.sigmaMs, all.sigma) };
+    setLead(clampLead(S.leadMs + v.median - calib.plan.aimMs));
+    beginBlock("verify", VERIFY_N);
+    renderCalibProgress(`정각 전 위험 ${riskPct.toFixed(1)}% — 안전 여유를 +${newMargin}ms로 늘려 확인 다시`);
+    return;
+  }
   S.calib = { at: Date.now(), leadMs: S.leadMs, aimMs: plan.aimMs, marginMs: plan.marginMs, sigmaTotMs, riskPct };
   S.errors = [...calib.adjustErrs, ...calib.errs];
   persist();
@@ -527,5 +549,6 @@ renderChecklist();
 renderCalibLine();
 requestAnimationFrame(loop);
 setInterval(scheduleCues, 200);            // 창이 가려져도 소리 예약이 이어지도록
+setInterval(trackAudioClock, 1000);        // 오디오 시계 빠르기 측정 (미리 예약하는 소리 보정용)
 setInterval(renderCalibLine, 30 * 1000);   // "N분 전" 갱신
 setInterval(doSync, 5 * 60 * 1000);        // 5분마다 재동기화

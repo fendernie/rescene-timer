@@ -39,8 +39,19 @@ test("load migrates v1 settings: release mode on, old practice errors cleared, l
   const store = memStore();
   store.setItem("rescene-timer", JSON.stringify({ leadMs: 30, releaseMode: false, errors: [1, 2] }));
   const s = load(store);
-  assert.equal(s.version, 2);
+  assert.equal(s.version, 3);
   assert.equal(s.releaseMode, true);
   assert.deepEqual(s.errors, []);
   assert.equal(s.leadMs, 30);
+});
+
+test("load migrates v2 -> v3: drops calibration made with the broken clock / inflated net delay", () => {
+  const store = memStore();
+  store.setItem("rescene-timer", JSON.stringify({ version: 2, leadMs: 40, netDelayMs: 52, calib: { aimMs: -11 }, errors: [3] }));
+  const s = load(store);
+  assert.equal(s.version, 3);
+  assert.equal(s.calib, null);
+  assert.equal(s.netDelayMs, 0);
+  assert.deepEqual(s.errors, []);
+  assert.equal(s.leadMs, 40);
 });

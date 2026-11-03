@@ -49,9 +49,15 @@ export function estimateOneWay(rttsMs) {
 }
 
 // 재동기화 결과 검증: 이미 동기화된 시계가 1초 넘게 점프하는 값은 오염된 측정으로 보고 버린다.
-export function isSaneShift(prevOffsetMs, nextOffsetMs, isFirstSync) {
+export function isSaneShift(prevOffsetMs, nextOffsetMs, isFirstSync, limitMs = 1000) {
   if (isFirstSync) return true;
-  return Math.abs(nextOffsetMs - prevOffsetMs) <= 1000;
+  return Math.abs(nextOffsetMs - prevOffsetMs) <= limitMs;
+}
+
+// 기기 시계와 표준시 차이가 이 이상이면 경고. 맥·폰은 보통 NTP로 ±50ms 안 → 200ms 넘으면
+// 기기 시계가 틀렸거나 시각 소스가 이상하다는 뜻 (2026-11-03 사고: 소스가 0~1초 틀렸는데 아무 경고 없었음)
+export function clockWarning(deviceMinusStdMs, limitMs = 200) {
+  return Math.abs(deviceMinusStdMs) > limitMs;
 }
 
 // 단조시계(컴퓨터 시각 조정·NTP 보정에 흔들리지 않는 시계)를 epoch ms로.
